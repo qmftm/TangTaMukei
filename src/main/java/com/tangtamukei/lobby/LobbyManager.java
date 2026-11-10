@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 public final class LobbyManager {
 
@@ -32,6 +33,7 @@ public final class LobbyManager {
     private final NamespacedKey itemKey;
     private final LobbyWorld lobbyWorld;
     private final Set<UUID> hidingOthers = new HashSet<>();
+    private Predicate<Player> inGame = p -> false;
 
     public LobbyManager(JavaPlugin plugin, BedrockSupport bedrock, LobbyWorld lobbyWorld) {
         this.plugin = plugin;
@@ -50,6 +52,11 @@ public final class LobbyManager {
 
     public BedrockSupport bedrock() {
         return bedrock;
+    }
+
+    /** 게임 중인 플레이어는 재접속해도 로비로 보내지 않음. */
+    public void setInGameCheck(Predicate<Player> inGame) {
+        this.inGame = inGame;
     }
 
     public LobbyWorld lobbyWorld() {
@@ -98,7 +105,7 @@ public final class LobbyManager {
 
     public void onJoin(Player player) {
         ConfigurationSection join = config().getConfigurationSection("join");
-        if (join == null) return;
+        if (join == null || inGame.test(player)) return;
 
         if (join.getBoolean("teleport-to-spawn", true)) {
             player.teleportAsync(spawn());
@@ -206,6 +213,15 @@ public final class LobbyManager {
         giveItems(player);
         message(player, hide ? "players-hidden" : "players-shown");
         playSound(player, "UI_BUTTON_CLICK");
+    }
+
+    /** 숨김 해제 + 다른 사람들이 숨긴 것도 해제 (게임 시작 시). */
+    public void resetVisibility(Player player) {
+        hidingOthers.remove(player.getUniqueId());
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            player.showPlayer(plugin, other);
+            other.showPlayer(plugin, player);
+        }
     }
 
     // ───────────── 액션 ─────────────

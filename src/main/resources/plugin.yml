@@ -7,7 +7,7 @@ softdepend: [floodgate, Geyser-Spigot]
 
 permissions:
   tangtamukei.admin:
-    description: 로비 설정 명령어 (/setlobby, /lobbyrebuild, /lobbyreload)
+    description: 로비 설정 명령어 (/setlobby, /lobbyrebuild, /lobbyreload, /game)
     default: op
   tangtamukei.build:
     description: 크리에이티브 모드일 때 로비 보호 무시
