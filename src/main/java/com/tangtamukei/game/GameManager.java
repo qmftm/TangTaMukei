@@ -450,7 +450,7 @@ public final class GameManager {
             player.teleportAsync(spawn).thenRun(() -> preparePlayer(player, t));
         }
         state = State.RUNNING;
-        territory.start(used);
+        territory.start(used, startChunks());
         World world = overworld;
         landTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> landToken.tick(world, territory, this::teamOf), 1L, 1L);
         pendingTeams = 0;
@@ -495,8 +495,14 @@ public final class GameManager {
         return team != null ? teamSpawn(team) : overworld.getSpawnLocation();
     }
 
+    /** config: 팀마다 처음 주는 청크 수 (꼭짓점부터 정사각형으로). */
+    private int startChunks() {
+        return Math.clamp(plugin.getConfig().getInt("game.start-chunks", 4), 1, 64);
+    }
+
     public Location teamSpawn(GameTeam team) {
-        int x = team.spawnX(), z = team.spawnZ();
+        int[] spawn = Territory.spawnBlock(team, startChunks());
+        int x = spawn[0], z = spawn[1];
         return new Location(overworld, x + 0.5, overworld.getHighestBlockYAt(x, z) + 1, z + 0.5);
     }
 

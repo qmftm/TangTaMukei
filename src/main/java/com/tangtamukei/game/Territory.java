@@ -13,16 +13,39 @@ public final class Territory {
     /** 땅 주인이 바뀔 때마다 증가 (지도 다시 그리기용). */
     private volatile int version;
 
-    /** 게임 시작: 모든 땅 초기화 후 팀 시작 꼭짓점 2x2 청크 지급. */
-    public void start(GameTeam[] teams) {
+    /** 게임 시작: 모든 땅 초기화 후 팀마다 꼭짓점부터 startChunks 개 지급. */
+    public void start(GameTeam[] teams, int startChunks) {
         for (GameTeam[] row : owner) java.util.Arrays.fill(row, null);
         for (GameTeam t : teams) {
-            int c0 = t.spawnX() < 0 ? 0 : N - 2, r0 = t.spawnZ() < 0 ? 0 : N - 2;
-            for (int dc = 0; dc < 2; dc++)
-                for (int dr = 0; dr < 2; dr++)
-                    owner[c0 + dc][r0 + dr] = t;
+            for (int[] cr : startChunks(t, startChunks)) owner[cr[0]][cr[1]] = t;
         }
         version++;
+    }
+
+    /**
+     * 꼭짓점부터 정사각형으로 채워나가는 순서의 청크 n 개 {col, row}.
+     * 1 = 꼭짓점 1칸, 4 = 2x2, 9 = 3x3, 그 사이 값은 다음 줄을 한 칸씩 채움.
+     */
+    public static java.util.List<int[]> startChunks(GameTeam t, int n) {
+        int half = N / 2;
+        java.util.List<int[]> local = new java.util.ArrayList<>();
+        for (int a = 0; a < half; a++) for (int b = 0; b < half; b++) local.add(new int[]{a, b});
+        local.sort(java.util.Comparator.<int[]>comparingInt(p -> Math.max(p[0], p[1]))
+                .thenComparingInt(p -> Math.min(p[0], p[1]))
+                .thenComparingInt(p -> p[0] < p[1] ? 1 : 0));
+        java.util.List<int[]> out = new java.util.ArrayList<>();
+        for (int[] p : local.subList(0, Math.clamp(n, 1, half * half))) {
+            out.add(new int[]{t.signX() < 0 ? p[0] : N - 1 - p[0], t.signZ() < 0 ? p[1] : N - 1 - p[1]});
+        }
+        return out;
+    }
+
+    /** 시작 땅 안의 스폰 블록 {x, z}: 꽉 찬 k x k 정사각형의 가운데. */
+    public static int[] spawnBlock(GameTeam t, int n) {
+        int k = Math.max(1, (int) Math.sqrt(Math.clamp(n, 1, (N / 2) * (N / 2))));
+        int x = t.signX() < 0 ? MapLayout.MIN + k * 8 : MapLayout.MAX - k * 8;
+        int z = t.signZ() < 0 ? MapLayout.MIN + k * 8 : MapLayout.MAX - k * 8;
+        return new int[]{x, z};
     }
 
     public GameTeam owner(int col, int row) {

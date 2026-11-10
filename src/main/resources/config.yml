@@ -111,6 +111,9 @@ menu:
       action: 'command:lobby'
 
 game:
+  # 게임 시작 때 팀마다 주는 땅(청크) 수. 꼭짓점부터 정사각형으로 채움
+  # 1 = 꼭짓점 1칸, 4 = 2x2, 9 = 3x3 (그 사이 값은 다음 줄을 한 칸씩). 최대 64
+  start-chunks: 4
   # 게임 시작 때 이전 판 발전과제 진척 초기화 (/book 책이 이번 판 기준이 되도록)
   reset-advancements: true
 

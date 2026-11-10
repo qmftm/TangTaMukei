@@ -20,13 +20,13 @@ public enum GameTeam {
         this.signZ = signZ;
     }
 
-    /** 꼭짓점 칸(32x32) 중앙 좌표. */
-    public int spawnX() {
-        return signX * (MapLayout.MAX - MapLayout.CELL / 2);
+    /** 꼭짓점 방향 (-1 = 서/북, 1 = 동/남). */
+    public int signX() {
+        return signX;
     }
 
-    public int spawnZ() {
-        return signZ * (MapLayout.MAX - MapLayout.CELL / 2);
+    public int signZ() {
+        return signZ;
     }
 
     /** 팀 수에 따라 쓸 팀. 2팀이면 대각선 꼭짓점끼리. */
