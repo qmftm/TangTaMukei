@@ -51,15 +51,20 @@ public final class MapLayout {
         big(0, 3, CellType.MONUMENT);     // 서
         big(3, 3, CellType.STRONGHOLD);   // 중앙
 
-        // 사분면 배치를 시계방향으로 4번 회전
-        for (int r = 0; r < 4; r++) {
-            for (int c = 0; c < 4; c++) {
-                CellType type = QUADRANT[r][c];
+        fillRotated(grid, QUADRANT);
+    }
+
+    /** 북서 사분면 배치를 시계방향으로 90도씩 돌려 빈 칸을 채움. grid[col][row], quadrant[row][col] */
+    static <T> void fillRotated(T[][] grid, T[][] quadrant) {
+        int n = grid.length;
+        for (int r = 0; r < quadrant.length; r++) {
+            for (int c = 0; c < quadrant[r].length; c++) {
+                T type = quadrant[r][c];
                 if (type == null) continue;
                 int row = r, col = c;
                 for (int rot = 0; rot < 4; rot++) {
                     if (grid[col][row] == null) grid[col][row] = type;
-                    int nRow = col, nCol = GRID - 1 - row; // 90도 회전
+                    int nRow = col, nCol = n - 1 - row; // 90도 회전
                     row = nRow;
                     col = nCol;
                 }
@@ -135,13 +140,5 @@ public final class MapLayout {
     }
 
     public record Placement(Structure structure, int x, int z) {
-    }
-
-    public static List<Placement> netherPlacements() {
-        return List.of(
-                new Placement(Structure.FORTRESS, 0, 0),           // 중앙
-                new Placement(Structure.BASTION_REMNANT, 0, -80),  // 북 (레드·옐로 공용)
-                new Placement(Structure.BASTION_REMNANT, 0, 80)    // 남 (그린·블루 공용)
-        );
     }
 }

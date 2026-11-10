@@ -7,12 +7,16 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Chest;
+import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.EnderSignal;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
@@ -32,14 +36,22 @@ public final class GameListener implements Listener {
     private static final int PORTAL_RADIUS = 16;
 
     private final GameManager game;
+    private final org.bukkit.plugin.Plugin plugin;
 
-    public GameListener(GameManager game) {
+    public GameListener(GameManager game, org.bukkit.plugin.Plugin plugin) {
         this.game = game;
+        this.plugin = plugin;
     }
 
     /** 네더 ↔ 오버월드를 같은 좌표로 연결 (바닐라 8:1 무시). */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerPortal(PlayerPortalEvent event) {
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            World from = event.getFrom().getWorld();
+            if (from.equals(game.overworld())) event.setTo(game.endArrival());           // 게임 엔드로
+            else if (from.equals(game.end())) event.setTo(game.respawnFor(event.getPlayer())); // 엔드 탈출
+            return;
+        }
         if (event.getCause() != PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) return;
         Location to = linked(event.getFrom());
         if (to == null) return;
@@ -50,6 +62,12 @@ public final class GameListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityPortal(EntityPortalEvent event) {
+        if (event.getPortalType() == org.bukkit.PortalType.ENDER) {
+            World from = event.getFrom().getWorld();
+            if (from.equals(game.overworld())) event.setTo(game.endArrival());
+            else if (from.equals(game.end())) event.setTo(game.overworld().getSpawnLocation());
+            return;
+        }
         if (event.getPortalType() != org.bukkit.PortalType.NETHER) return;
         Location to = linked(event.getFrom());
         if (to == null) return;
@@ -72,6 +90,61 @@ public final class GameListener implements Listener {
         double z = Math.clamp(from.getZ(), -limit, limit);
         double y = Math.clamp(from.getY(), target.getMinHeight() + 8, target.getEnvironment() == World.Environment.NETHER ? 118 : 250);
         return new Location(target, x, y, z, from.getYaw(), from.getPitch());
+    }
+
+    /** 침대가 부서졌거나 엔드에서 나올 때 게임 밖(메인 월드)으로 리스폰되지 않게. */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        if (game.teamOf(player) == null) return;
+        Location loc = event.getRespawnLocation();
+        if (!game.isGameWorld(loc.getWorld()) || loc.getWorld().equals(game.end())) {
+            event.setRespawnLocation(game.respawnFor(player));
+        }
+    }
+
+    // ───────────── 엔더 드래곤 ─────────────
+
+    /** 드래곤 처치: (0, 80, 0) 에 겉날개 상자 + 엔드 게이트웨이 생성 막기. */
+    @EventHandler
+    public void onDragonDeath(EntityDeathEvent event) {
+        if (!(event.getEntity() instanceof EnderDragon) || !event.getEntity().getWorld().equals(game.end())) return;
+        World end = game.end();
+
+        Block block = end.getBlockAt(0, 80, 0);
+        block.setType(Material.CHEST);
+        if (block.getState() instanceof Chest chest) {
+            chest.getBlockInventory().addItem(ItemStack.of(Material.ELYTRA));
+        }
+        end.playSound(block.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 2f, 1f);
+
+        // 게이트웨이는 드래곤 사망 연출(약 10초)이 끝날 때 생김 → 30초 동안 감시해서 제거
+        int[] ticks = {0};
+        org.bukkit.Bukkit.getScheduler().runTaskTimer(plugin, task -> {
+            ticks[0] += 10;
+            if (end != game.end() || ticks[0] > 600) {
+                task.cancel();
+                return;
+            }
+            if (removeGateways(end)) task.cancel();
+        }, 10L, 10L);
+    }
+
+    /** 바닐라 게이트웨이 위치 20곳 (반지름 96, y 75) 확인 후 제거. */
+    private static boolean removeGateways(World end) {
+        boolean removed = false;
+        for (int i = 0; i < 20; i++) {
+            double angle = 2.0 * (-Math.PI + 0.15707963267948966 * i);
+            int x = (int) Math.floor(96.0 * Math.cos(angle));
+            int z = (int) Math.floor(96.0 * Math.sin(angle));
+            if (end.getBlockAt(x, 75, z).getType() != Material.END_GATEWAY) continue;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                    for (int dz = -1; dz <= 1; dz++)
+                        end.getBlockAt(x + dx, 75 + dy, z + dz).setType(Material.AIR, false);
+            removed = true;
+        }
+        return removed;
     }
 
     // ───────────── 엔더의 눈 → 맵 중앙 요새 ─────────────

@@ -32,7 +32,7 @@ public final class TangTaMukei extends JavaPlugin {
         lobby.setInGameCheck(p -> game.teamOf(p) != null);
 
         getServer().getPluginManager().registerEvents(new LobbyListener(lobby), this);
-        getServer().getPluginManager().registerEvents(new GameListener(game), this);
+        getServer().getPluginManager().registerEvents(new GameListener(game, this), this);
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             LobbyCommands.register(event.registrar(), this, lobby);
             event.registrar().register("game", "팀 게임 시작/종료", java.util.List.of("게임"), new GameCommand(game));

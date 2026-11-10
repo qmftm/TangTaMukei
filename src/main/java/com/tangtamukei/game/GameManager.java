@@ -48,15 +48,21 @@ public final class GameManager {
     private static final String WORLD_PREFIX = "tt_game_";
     /** 큰 구조물이 맵 밖으로 삐져나올 수 있어서 바깥 여유 청크도 로드 (나중에 지움). */
     private static final int MARGIN_CHUNKS = 8;
+    /** 엔드 월드보더: 메인 섬(반지름 약 140)만 들어오는 크기. 바깥 섬은 1000블록 밖이라 안 보임. */
+    public static final int END_BORDER = 300;
+    /** 엔드 도착 지점 (바닐라처럼 흑요석 발판 생성). */
+    private static final int END_ARRIVAL_X = 100, END_ARRIVAL_Y = 49;
 
     private final JavaPlugin plugin;
     private final LobbyManager lobby;
     private final MapLayout layout = new MapLayout();
+    private final NetherLayout netherLayout = new NetherLayout();
     private final Map<UUID, GameTeam> teams = new HashMap<>();
 
     private State state = State.IDLE;
     private World overworld;
     private World nether;
+    private World end;
     private Location strongholdTarget;
 
     public GameManager(JavaPlugin plugin, LobbyManager lobby) {
@@ -71,7 +77,11 @@ public final class GameManager {
     }
 
     public boolean isGameWorld(World world) {
-        return world != null && (world.equals(overworld) || world.equals(nether));
+        return world != null && (world.equals(overworld) || world.equals(nether) || world.equals(end));
+    }
+
+    public World end() {
+        return end;
     }
 
     public World overworld() {
@@ -114,46 +124,115 @@ public final class GameManager {
                 .generator(new OverworldGenerator(layout, seed))
                 .generateStructures(false)
                 .createWorld();
-        nether = new WorldCreator(name + "_nether")
-                .environment(World.Environment.NETHER)
-                .seed(seed)
-                .generator(new NetherGenerator())
-                .generateStructures(false)
-                .createWorld();
-        if (overworld == null || nether == null) {
-            broadcast("<red>맵 생성 실패");
-            cleanupWorlds();
-            state = State.IDLE;
+        if (overworld == null) {
+            fail();
             return true;
         }
-        for (World w : List.of(overworld, nether)) {
-            WorldBorder border = w.getWorldBorder();
-            border.setCenter(0, 0);
-            border.setSize(MapLayout.SIZE);
-            border.setWarningDistance(8);
-        }
+        setBorder(overworld, MapLayout.SIZE);
         overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
 
-        loadArea(overworld)
-                .thenCompose(v -> loadArea(nether))
-                .thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> placeStructures(players, count)));
+        findFortressSeed(1).thenAccept(netherSeed -> {
+            if (state != State.GENERATING) return;
+            nether = new WorldCreator(name + "_nether")
+                    .environment(World.Environment.NETHER)
+                    .seed(netherSeed)
+                    .generator(new NetherGenerator(netherLayout))
+                    .generateStructures(false)
+                    .createWorld();
+            end = new WorldCreator(name + "_end")
+                    .environment(World.Environment.THE_END)
+                    .seed(seed)
+                    .createWorld();
+            if (nether == null || end == null) {
+                fail();
+                return;
+            }
+            setBorder(nether, MapLayout.SIZE);
+            setBorder(end, END_BORDER);
+
+            loadArea(overworld, "오버월드")
+                    .thenCompose(v -> loadArea(nether, "네더"))
+                    .thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> placeStructures(players, count)));
+        });
         return true;
     }
 
+    private void fail() {
+        broadcast("<red>맵 생성 실패");
+        state = State.IDLE;
+        cleanupWorlds();
+    }
+
+    private static void setBorder(World w, int size) {
+        WorldBorder border = w.getWorldBorder();
+        border.setCenter(0, 0);
+        border.setSize(size);
+        border.setWarningDistance(8);
+    }
+
+    /**
+     * 네더 요새가 맵 밖으로 삐져나오지 않는 시드 찾기.
+     * 요새 모양은 (시드, 청크 위치)만으로 정해지므로, 빈 테스트 월드에 같은 시드로 먼저 놓아보고
+     * 맵 밖에 블록이 생기면 시드를 바꿔 다시 시도.
+     */
+    private CompletableFuture<Long> findFortressSeed(int attempt) {
+        long seed = ThreadLocalRandom.current().nextLong();
+        actionBar("<yellow>네더 요새 위치 확인 중 <white>(" + attempt + ")");
+        World test = new WorldCreator(WORLD_PREFIX + "test_" + System.nanoTime())
+                .environment(World.Environment.NETHER)
+                .seed(seed)
+                .generator(new com.tangtamukei.lobby.VoidGenerator(64))
+                .generateStructures(false)
+                .createWorld();
+        if (test == null) return CompletableFuture.completedFuture(seed);
+
+        int r = (MapLayout.MAX >> 4) + 2; // 맵보다 2청크 넓게
+        return loadChunks(test, -r, r - 1, null).thenCompose(v -> {
+            place(test, NetherLayout.FORTRESS, 64);
+            boolean inside = structureFitsInMap(test, -r, r - 1);
+            File folder = test.getWorldFolder();
+            Bukkit.unloadWorld(test, false);
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> deleteFolder(folder));
+            if (inside || attempt >= 15) {
+                if (!inside) plugin.getLogger().warning("맵 안에 들어오는 네더 요새 시드를 찾지 못했습니다.");
+                return CompletableFuture.completedFuture(seed);
+            }
+            return findFortressSeed(attempt + 1);
+        });
+    }
+
+    /** 빈 월드에서: 맵 안에 블록이 있고(배치 성공) 맵 밖은 비어 있으면 true. */
+    private static boolean structureFitsInMap(World world, int min, int max) {
+        boolean placed = false;
+        int sections = (world.getMaxHeight() - world.getMinHeight()) >> 4;
+        for (int cx = min; cx <= max; cx++) {
+            for (int cz = min; cz <= max; cz++) {
+                ChunkSnapshot snap = world.getChunkAt(cx, cz).getChunkSnapshot(false, false, false);
+                boolean empty = true;
+                for (int s = 0; s < sections && empty; s++) empty = snap.isSectionEmpty(s);
+                if (empty) continue;
+                if (!MapLayout.insideChunk(cx, cz)) return false;
+                placed = true;
+            }
+        }
+        return placed;
+    }
+
     /** 맵 + 여유 청크를 비동기로 생성/로드하고 고정. */
-    private CompletableFuture<Void> loadArea(World world) {
-        int min = MapLayout.MIN_CHUNK - MARGIN_CHUNKS, max = MapLayout.MAX_CHUNK + MARGIN_CHUNKS;
+    private CompletableFuture<Void> loadArea(World world, String label) {
+        return loadChunks(world, MapLayout.MIN_CHUNK - MARGIN_CHUNKS, MapLayout.MAX_CHUNK + MARGIN_CHUNKS, label);
+    }
+
+    private CompletableFuture<Void> loadChunks(World world, int min, int max, String label) {
         int total = (max - min + 1) * (max - min + 1);
         AtomicInteger done = new AtomicInteger();
         List<CompletableFuture<?>> futures = new ArrayList<>();
-        String label = world.equals(nether) ? "네더" : "오버월드";
-
         for (int cx = min; cx <= max; cx++) {
             for (int cz = min; cz <= max; cz++) {
                 futures.add(world.getChunkAtAsync(cx, cz, true).thenAccept(chunk -> {
                     chunk.addPluginChunkTicket(plugin);
                     int n = done.incrementAndGet();
-                    if (n % 64 == 0 || n == total) {
+                    if (label != null && (n % 64 == 0 || n == total)) {
                         actionBar("<yellow>" + label + " 생성 중 <white>" + (n * 100 / total) + "%");
                     }
                 }));
@@ -167,7 +246,7 @@ public final class GameManager {
         if (state != State.GENERATING) return;
         Deque<Runnable> jobs = new ArrayDeque<>();
         for (MapLayout.Placement p : layout.placements()) jobs.add(() -> place(overworld, p, 64));
-        for (MapLayout.Placement p : MapLayout.netherPlacements()) jobs.add(() -> place(nether, p, 64));
+        for (MapLayout.Placement p : netherLayout.placements()) jobs.add(() -> place(nether, p, 64));
         int total = jobs.size();
 
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
@@ -288,6 +367,25 @@ public final class GameManager {
                 Text.parse("<white>게임 시작!")));
     }
 
+    /** 엔드 도착 지점 + 흑요석 발판 (바닐라와 같은 5x5). */
+    public Location endArrival() {
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                end.getBlockAt(END_ARRIVAL_X + dx, END_ARRIVAL_Y - 1, dz).setType(Material.OBSIDIAN);
+                for (int dy = 0; dy < 3; dy++) end.getBlockAt(END_ARRIVAL_X + dx, END_ARRIVAL_Y + dy, dz).setType(Material.AIR);
+            }
+        }
+        return new Location(end, END_ARRIVAL_X + 0.5, END_ARRIVAL_Y, 0.5, 90f, 0f);
+    }
+
+    /** 리스폰 위치: 침대 등이 게임 월드에 있으면 그곳, 아니면 팀 스폰. */
+    public Location respawnFor(Player player) {
+        Location bed = player.getRespawnLocation();
+        if (bed != null && isGameWorld(bed.getWorld()) && !bed.getWorld().equals(end)) return bed;
+        GameTeam team = teamOf(player);
+        return team != null ? teamSpawn(team) : overworld.getSpawnLocation();
+    }
+
     public Location teamSpawn(GameTeam team) {
         int x = team.spawnX(), z = team.spawnZ();
         return new Location(overworld, x + 0.5, overworld.getHighestBlockYAt(x, z) + 1, z + 0.5);
@@ -324,7 +422,7 @@ public final class GameManager {
 
     private void cleanupWorlds() {
         List<File> folders = new ArrayList<>();
-        for (World w : new World[]{overworld, nether}) {
+        for (World w : new World[]{overworld, nether, end}) {
             if (w == null) continue;
             for (Player p : w.getPlayers()) p.teleport(lobby.spawn());
             folders.add(w.getWorldFolder());
@@ -332,6 +430,7 @@ public final class GameManager {
         }
         overworld = null;
         nether = null;
+        end = null;
         strongholdTarget = null;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> folders.forEach(GameManager::deleteFolder));
     }
@@ -367,7 +466,7 @@ public final class GameManager {
     }
 
     private void cleanupWorldsSync() {
-        for (World w : new World[]{overworld, nether}) {
+        for (World w : new World[]{overworld, nether, end}) {
             if (w == null) continue;
             File folder = w.getWorldFolder();
             Bukkit.unloadWorld(w, false);
@@ -375,6 +474,7 @@ public final class GameManager {
         }
         overworld = null;
         nether = null;
+        end = null;
     }
 
     // ───────────── 유틸 ─────────────
