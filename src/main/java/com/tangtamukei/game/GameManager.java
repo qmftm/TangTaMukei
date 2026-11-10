@@ -39,11 +39,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 /**
- * 게임 진행: 맵 생성 → 팀 나누기 → 꼭짓점 스폰 → 종료 시 맵 삭제.
+ * 게임 진행: 맵 미리 준비 → 팀 나누기 → 꼭짓점 스폰 → 종료 시 맵 삭제 후 다음 맵 준비.
+ * 맵 생성은 몇 분 걸리므로 로비에서 기다리는 동안 다음 판 맵을 백그라운드로 만들어 둠.
  */
 public final class GameManager {
 
-    public enum State { IDLE, GENERATING, RUNNING }
+    /** IDLE: 맵 없음, PREPARING: 다음 맵 만드는 중, READY: 맵 준비 완료, RUNNING: 게임 중 */
+    public enum State { IDLE, PREPARING, READY, RUNNING }
 
     private static final String WORLD_PREFIX = "tt_game_";
     /** 큰 구조물이 맵 밖으로 삐져나올 수 있어서 바깥 여유 청크도 로드 (나중에 지움). */
@@ -68,12 +70,17 @@ public final class GameManager {
     private PastedOverworld pasted;
     private int[][] chunkGroups;
     private Location strongholdTarget;
+    /** 맵 준비 중에 /game start 가 들어오면 팀 수를 기억해 뒀다가 준비되자마자 시작. 0 = 대기 없음 */
+    private int pendingTeams;
+    private long prepareStarted;
 
     public GameManager(JavaPlugin plugin, LobbyManager lobby) {
         this.plugin = plugin;
         this.lobby = lobby;
         deleteLeftoverWorlds();
         LogFilter.install();
+        // 서버가 켜지고 잠시 뒤 첫 맵 준비
+        Bukkit.getScheduler().runTaskLater(plugin, this::prepareMap, 200L);
     }
 
     public State state() {
@@ -118,19 +125,34 @@ public final class GameManager {
 
     // ───────────── 시작 ─────────────
 
+    /**
+     * 게임 시작. 맵이 준비돼 있으면 바로, 준비 중이면 끝나는 대로, 없으면 만들기 시작하고 끝나는 대로.
+     * @return 이미 게임 중이면 false
+     */
     public boolean start(int teamCount) {
-        if (state != State.IDLE) return false;
-        List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
+        if (state == State.RUNNING) return false;
+        int count = Math.clamp(teamCount <= 0 ? Math.max(Bukkit.getOnlinePlayers().size(), 1) : teamCount, 1, 4);
+        if (state == State.READY) {
+            begin(new ArrayList<>(Bukkit.getOnlinePlayers()), count);
+            return true;
+        }
+        pendingTeams = count;
+        if (state == State.IDLE) prepareMap();
+        broadcast("<yellow>맵을 준비하는 중이에요. 끝나는 대로 시작합니다. <gray>(" + count + "팀)");
+        return true;
+    }
 
-        state = State.GENERATING;
-        int count = Math.clamp(teamCount <= 0 ? Math.max(players.size(), 1) : teamCount, 1, 4);
-        broadcast("<yellow>맵 생성 중... 잠시 기다려 주세요. <gray>(" + count + "팀)");
+    /** 다음 판 맵(오버월드·네더·엔드)을 백그라운드로 준비. */
+    public void prepareMap() {
+        if (state != State.IDLE) return;
+        state = State.PREPARING;
+        prepareStarted = System.currentTimeMillis();
 
         long seed = ThreadLocalRandom.current().nextLong();
         String name = WORLD_PREFIX + System.currentTimeMillis();
         layout = new MapLayout(seed);
 
-        // 1) 숨겨진 야생 월드(소스)에서 칸마다 지형을 찾아 불러옴
+        // 숨겨진 야생 월드(소스)
         source = new WorldCreator(name + "_src")
                 .environment(World.Environment.NORMAL)
                 .seed(seed)
@@ -139,36 +161,26 @@ public final class GameManager {
                 .createWorld();
         if (source == null) {
             fail();
-            return true;
+            return;
         }
-        PastedOverworld.prepare(plugin, source, layout, seed, msg -> actionBar("<yellow>" + msg)).thenAccept(paste -> {
-            if (state != State.GENERATING) return;
-            // 2) 게임 오버월드: 찾아둔 지형을 청크 단위로 그대로 복사
-            pasted = paste;
-            overworld = new WorldCreator(name)
-                    .environment(World.Environment.NORMAL)
-                    .seed(seed)
-                    .generator(new PasteGenerator(paste))
-                    .generateStructures(false)
-                    .createWorld();
-            if (overworld == null) {
-                fail();
-                return;
-            }
-            setBorder(overworld, MapLayout.SIZE);
-            overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
-            createNetherAndEnd(name, seed, players, count);
-        }).exceptionally(t -> {
-            plugin.getLogger().log(java.util.logging.Level.SEVERE, "오버월드 생성 실패", t);
-            Bukkit.getScheduler().runTask(plugin, this::fail);
-            return null;
-        });
-        return true;
-    }
 
-    private void createNetherAndEnd(String name, long seed, List<Player> players, int count) {
-        findFortressSeed(1).thenAccept(netherSeed -> {
-            if (state != State.GENERATING) return;
+        // 오버월드(소스에서 지형 복사)와 네더·엔드를 동시에 준비
+        CompletableFuture<Void> overworldDone = PastedOverworld.prepare(plugin, source, layout, seed, this::progress)
+                .thenCompose(paste -> {
+                    pasted = paste;
+                    overworld = new WorldCreator(name)
+                            .environment(World.Environment.NORMAL)
+                            .seed(seed)
+                            .generator(new PasteGenerator(paste))
+                            .generateStructures(false)
+                            .createWorld();
+                    if (overworld == null) throw new IllegalStateException("오버월드 생성 실패");
+                    setBorder(overworld, MapLayout.SIZE);
+                    return loadChunks(overworld, MapLayout.MIN_CHUNK, MapLayout.MAX_CHUNK, "오버월드");
+                })
+                .thenRun(this::finishOverworld);
+
+        CompletableFuture<Void> netherDone = findFortressSeed(1).thenCompose(netherSeed -> {
             nether = new WorldCreator(name + "_nether")
                     .environment(World.Environment.NETHER)
                     .seed(netherSeed)
@@ -179,21 +191,54 @@ public final class GameManager {
                     .environment(World.Environment.THE_END)
                     .seed(seed)
                     .createWorld();
-            if (nether == null || end == null) {
+            if (nether == null || end == null) throw new IllegalStateException("네더/엔드 생성 실패");
+            setBorder(nether, MapLayout.SIZE);
+            setBorder(end, END_BORDER);
+            return loadArea(nether, "네더").thenCompose(v -> placeNetherStructures());
+        });
+
+        CompletableFuture.allOf(overworldDone, netherDone).whenComplete((v, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (state != State.PREPARING) return;
+            if (err != null) {
+                plugin.getLogger().log(java.util.logging.Level.SEVERE, "맵 준비 실패", err);
                 fail();
                 return;
             }
-            setBorder(nether, MapLayout.SIZE);
-            setBorder(end, END_BORDER);
+            releaseChunks();
+            state = State.READY;
+            plugin.getLogger().info("다음 맵 준비 완료 (" + (System.currentTimeMillis() - prepareStarted) / 1000 + "초)");
+            if (pendingTeams > 0) {
+                int count = pendingTeams;
+                pendingTeams = 0;
+                begin(new ArrayList<>(Bukkit.getOnlinePlayers()), count);
+            }
+        }));
+    }
 
-            loadChunks(overworld, MapLayout.MIN_CHUNK, MapLayout.MAX_CHUNK, "오버월드")
-                    .thenCompose(v -> loadArea(nether, "네더"))
-                    .thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> placeStructures(players, count)));
-        });
+    /** 오버월드 청크가 다 만들어진 뒤: 상자·스포너 내용과 몹 복사, 소스 월드 버리기. */
+    private void finishOverworld() {
+        int copied = pasted.copyStatesAndEntities(overworld);
+        chunkGroups = pasted.groups();
+        Location portal = pasted.portal();
+        strongholdTarget = portal != null
+                ? new Location(overworld, portal.getX(), portal.getY(), portal.getZ())
+                : new Location(overworld, 0.5, 30, 0.5);
+        overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
+        plugin.getLogger().info("오버월드 복사 완료: 영역 " + pasted.regions().size() + "개, 몹 " + copied
+                + "마리, 엔드 포탈 " + (portal != null ? "y " + (int) portal.getY() : "못 찾음")
+                + " (" + (System.currentTimeMillis() - prepareStarted) / 1000 + "초)");
+        pasted.release();
+        discardSource();
+    }
+
+    /** 맵 준비 진행 상황: 시작을 기다리는 중일 때만 액션바로 보여줌. */
+    private void progress(String msg) {
+        if (pendingTeams > 0) actionBar("<yellow>" + msg);
     }
 
     private void fail() {
-        broadcast("<red>맵 생성 실패");
+        if (pendingTeams > 0) broadcast("<red>맵 생성에 실패했어요. 다시 /game start 해주세요.");
+        pendingTeams = 0;
         state = State.IDLE;
         cleanupWorlds();
     }
@@ -212,7 +257,7 @@ public final class GameManager {
      */
     private CompletableFuture<Long> findFortressSeed(int attempt) {
         long seed = ThreadLocalRandom.current().nextLong();
-        actionBar("<yellow>네더 요새 위치 확인 중 <white>(" + attempt + ")");
+        progress("네더 요새 위치 확인 중 (" + attempt + ")");
         World test = new WorldCreator(WORLD_PREFIX + "test_" + System.nanoTime())
                 .environment(World.Environment.NETHER)
                 .seed(seed)
@@ -268,7 +313,7 @@ public final class GameManager {
                     chunk.addPluginChunkTicket(plugin);
                     int n = done.incrementAndGet();
                     if (label != null && (n % 64 == 0 || n == total)) {
-                        actionBar("<yellow>" + label + " 생성 중 <white>" + (n * 100 / total) + "%");
+                        progress(label + " 생성 중 " + (n * 100 / total) + "%");
                     }
                 }));
             }
@@ -276,40 +321,26 @@ public final class GameManager {
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
-    /** 바닐라 /place structure 로 구조물을 한 틱에 하나씩 놓음. */
-    private void placeStructures(List<Player> players, int count) {
-        if (state != State.GENERATING) return;
-        Deque<Runnable> jobs = new ArrayDeque<>();
-        for (NetherLayout.Placement p : netherLayout.placements()) jobs.add(() -> place(nether, p, 64));
-        int total = jobs.size();
-
+    /** 네더 구조물을 바닐라 /place structure 로 한 틱에 하나씩 놓고, 맵 밖으로 나온 부분 정리. */
+    private CompletableFuture<Void> placeNetherStructures() {
+        CompletableFuture<Void> done = new CompletableFuture<>();
+        Deque<NetherLayout.Placement> jobs = new ArrayDeque<>(netherLayout.placements());
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
-            if (state != State.GENERATING) {
+            if (state != State.PREPARING) {
                 task.cancel();
+                done.completeExceptionally(new IllegalStateException("준비 취소됨"));
                 return;
             }
-            Runnable job = jobs.poll();
-            if (job != null) {
-                job.run();
-                actionBar("<yellow>구조물 배치 중 <white>" + (total - jobs.size()) + "/" + total);
+            NetherLayout.Placement p = jobs.poll();
+            if (p != null) {
+                place(nether, p, 64);
                 return;
             }
             task.cancel();
             clearOutside(nether);
-            // 소스 월드의 상자·스포너 내용과 주민·몹을 복사한 뒤 소스 월드는 버림
-            int copied = pasted.copyStatesAndEntities(overworld);
-            chunkGroups = pasted.groups();
-            Location portal = pasted.portal();
-            strongholdTarget = portal != null
-                    ? new Location(overworld, portal.getX(), portal.getY(), portal.getZ())
-                    : new Location(overworld, 0.5, 30, 0.5);
-            plugin.getLogger().info("오버월드 복사 완료: 영역 " + pasted.regions().size() + "개, 몹 " + copied
-                    + "마리, 엔드 포탈 " + (portal != null ? "y " + (int) portal.getY() : "못 찾음"));
-            pasted.release();
-            discardSource();
-            releaseChunks();
-            begin(players, count);
+            done.complete(null);
         }, 1L, 1L);
+        return done;
     }
 
     private void discardSource() {
@@ -353,7 +384,7 @@ public final class GameManager {
     }
 
     private void releaseChunks() {
-        for (World w : List.of(overworld, nether)) w.removePluginChunkTickets(plugin);
+        for (World w : new World[]{overworld, nether}) if (w != null) w.removePluginChunkTickets(plugin);
     }
 
     /** 팀 나누고 꼭짓점으로 이동. */
@@ -384,6 +415,7 @@ public final class GameManager {
             player.teleportAsync(spawn).thenRun(() -> preparePlayer(player, t));
         }
         state = State.RUNNING;
+        pendingTeams = 0;
         broadcast("<green><bold>게임 시작!</bold> <gray>" + used.length + "팀, " + players.size() + "명");
     }
 
@@ -433,8 +465,14 @@ public final class GameManager {
 
     // ───────────── 종료 ─────────────
 
+    /** 게임 종료 (준비 중 대기만 있으면 대기 취소). 끝나면 다음 맵 준비를 시작. */
     public boolean stop() {
-        if (state == State.IDLE) return false;
+        if (state != State.RUNNING) {
+            if (pendingTeams == 0) return false;
+            pendingTeams = 0;
+            broadcast("<yellow>게임 시작을 취소했어요.");
+            return true;
+        }
         state = State.IDLE;
 
         Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
@@ -451,8 +489,11 @@ public final class GameManager {
         teams.clear();
         broadcast("<yellow>게임이 종료되었습니다.");
 
-        // 텔레포트가 끝난 뒤 월드 삭제
-        Bukkit.getScheduler().runTaskLater(plugin, this::cleanupWorlds, 40L);
+        // 텔레포트가 끝난 뒤 월드 삭제 → 다음 맵 준비
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            cleanupWorlds();
+            prepareMap();
+        }, 40L);
         return true;
     }
 
@@ -493,13 +534,11 @@ public final class GameManager {
     }
 
     public void shutdown() {
-        if (state != State.IDLE) {
-            state = State.IDLE;
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                if (isGameWorld(p.getWorld())) p.teleport(lobby.spawn());
-            }
-            cleanupWorldsSync();
+        state = State.IDLE;
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (isGameWorld(p.getWorld())) p.teleport(lobby.spawn());
         }
+        cleanupWorldsSync();
     }
 
     private void cleanupWorldsSync() {
@@ -512,6 +551,7 @@ public final class GameManager {
         overworld = null;
         nether = null;
         end = null;
+        source = null;
     }
 
     // ───────────── 유틸 ─────────────

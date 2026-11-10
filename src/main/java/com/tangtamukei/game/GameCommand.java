@@ -32,15 +32,16 @@ public final class GameCommand implements BasicCommand {
                         return;
                     }
                 }
-                if (!game.start(teams)) send(sender, "<red>이미 게임이 진행 중입니다.");
+                if (!game.start(teams)) send(sender, "<red>이미 게임이 진행 중이에요.");
             }
             case "stop" -> {
                 if (!game.stop()) send(sender, "<red>진행 중인 게임이 없습니다.");
             }
             default -> send(sender, "<gray>게임 상태: <white>" + switch (game.state()) {
-                case IDLE -> "대기";
-                case GENERATING -> "맵 생성 중";
-                case RUNNING -> "진행 중";
+                case IDLE -> "맵 없음";
+                case PREPARING -> "다음 맵 준비 중";
+                case READY -> "맵 준비 완료 (바로 시작 가능)";
+                case RUNNING -> "게임 중";
             } + " <dark_gray>| /game start [팀수 1~4], /game stop");
         }
     }

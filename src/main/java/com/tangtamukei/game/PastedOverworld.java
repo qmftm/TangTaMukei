@@ -147,10 +147,15 @@ public final class PastedOverworld {
         return new Location(source, random.nextInt(-SEARCH_SPREAD, SEARCH_SPREAD), 64, random.nextInt(-SEARCH_SPREAD, SEARCH_SPREAD));
     }
 
+    private final Set<Long> usedChunks = new HashSet<>();
+
+    /** 바이옴 찾기. 다른 칸에서 이미 가져온 청크는 건너뜀. */
     private Location findBiome(Biome biome) {
-        for (int attempt = 0; attempt < 4; attempt++) {
+        for (int attempt = 0; attempt < 8; attempt++) {
             BiomeSearchResult r = source.locateNearestBiome(randomOrigin(), BIOME_RADIUS, biome);
-            if (r != null) return r.getLocation();
+            if (r != null && usedChunks.add(key(r.getLocation().getBlockX() >> 4, r.getLocation().getBlockZ() >> 4))) {
+                return r.getLocation();
+            }
         }
         BiomeSearchResult r = source.locateNearestBiome(randomOrigin(), BIOME_RADIUS * 2, Biome.PLAINS, Biome.FOREST);
         return r != null ? r.getLocation() : randomOrigin();
