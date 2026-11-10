@@ -264,7 +264,7 @@ public final class GameManager {
             task.cancel();
             clearOutside(overworld);
             clearOutside(nether);
-            strongholdTarget = findPortalRoom();
+            strongholdTarget = PortalRoom.relocate(overworld, new java.util.Random(overworld.getSeed()));
             releaseChunks();
             begin(players, count);
         }, 1L, 1L);
@@ -299,22 +299,6 @@ public final class GameManager {
                 }
             }
         }
-    }
-
-    /** 요새 엔드 포탈 방 찾기: 좀벌레 스포너 위치. 못 찾으면 맵 중앙 지하. */
-    private Location findPortalRoom() {
-        for (int cx = MapLayout.MIN_CHUNK; cx <= MapLayout.MAX_CHUNK; cx++) {
-            for (int cz = MapLayout.MIN_CHUNK; cz <= MapLayout.MAX_CHUNK; cz++) {
-                for (var state : overworld.getChunkAt(cx, cz).getTileEntities()) {
-                    if (state instanceof org.bukkit.block.CreatureSpawner spawner
-                            && spawner.getSpawnedType() == org.bukkit.entity.EntityType.SILVERFISH) {
-                        return state.getLocation().add(0.5, 0, 0.5);
-                    }
-                }
-            }
-        }
-        plugin.getLogger().warning("요새 엔드 포탈 방을 찾지 못했습니다.");
-        return new Location(overworld, 0.5, 30, 0.5);
     }
 
     private void releaseChunks() {

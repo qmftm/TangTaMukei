@@ -64,7 +64,8 @@ public enum CellType {
 
     // ── 중앙 ──
     STRONGHOLD   (70,  3, null,
-            v(Biome.MEADOW, Structure.STRONGHOLD), v(Biome.MUSHROOM_FIELDS, Structure.STRONGHOLD, -2, 0));
+            v(Biome.MEADOW, Structure.STRONGHOLD), v(Biome.PLAINS, Structure.STRONGHOLD),
+            v(Biome.FLOWER_FOREST, Structure.STRONGHOLD));
 
     /** 지하 바이옴이 시작되는 높이 (고대 도시의 깊은 어둠은 0). */
     public static final int CAVE_BIOME_Y = 30;
