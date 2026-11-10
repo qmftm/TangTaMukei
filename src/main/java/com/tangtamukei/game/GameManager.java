@@ -60,6 +60,14 @@ public final class GameManager {
         return book;
     }
 
+    public LandToken landToken() {
+        return landToken;
+    }
+
+    public RewardMenu rewards() {
+        return rewards;
+    }
+
     /** /map: 게임 중일 때 땅따먹기 지도. */
     public boolean giveMap(Player player) {
         if (state != State.RUNNING || !gameMap.ready()) return false;
@@ -90,12 +98,17 @@ public final class GameManager {
     private final Territory territory = new Territory();
     private final GameMap gameMap = new GameMap();
     private final AdvancementBook book;
+    private final LandToken landToken;
+    private final RewardMenu rewards;
+    private org.bukkit.scheduler.BukkitTask landTask;
     private long prepareStarted;
 
     public GameManager(JavaPlugin plugin, LobbyManager lobby) {
         this.plugin = plugin;
         this.lobby = lobby;
         this.book = new AdvancementBook(plugin);
+        this.landToken = new LandToken(plugin);
+        this.rewards = new RewardMenu(plugin, landToken, lobby.bedrock());
         deleteLeftoverWorlds();
         LogFilter.install();
         // 서버가 켜지고 잠시 뒤 첫 맵 준비
@@ -439,6 +452,8 @@ public final class GameManager {
         }
         state = State.RUNNING;
         territory.start(plugin, overworld, used, this::teamOf);
+        World world = overworld;
+        landTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> landToken.tick(world, territory, this::teamOf), 1L, 1L);
         pendingTeams = 0;
         broadcast("<green><bold>게임 시작!</bold> <gray>" + used.length + "팀, " + players.size() + "명");
     }
@@ -502,6 +517,9 @@ public final class GameManager {
         }
         state = State.IDLE;
         territory.stop();
+        if (landTask != null) landTask.cancel();
+        landTask = null;
+        landToken.clearAll();
 
         Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
         for (GameTeam t : GameTeam.values()) {

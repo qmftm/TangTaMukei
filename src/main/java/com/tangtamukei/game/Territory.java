@@ -18,8 +18,10 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * 청크 땅따먹기. 한 팀만 있는 청크에 CAPTURE_SECONDS 초 머물면 그 팀 땅이 됨 (다른 팀 땅도 빼앗기 가능).
- * 두 팀 이상 같이 있으면 경합이라 진행되지 않음. 각 팀의 시작 꼭짓점 2x2 청크는 처음부터 그 팀 땅.
+ * 청크 땅따먹기.
+ * - 안 먹은 땅(주인 없음)은 [일반 땅] 도끼로만 먹을 수 있음 ({@link LandToken})
+ * - 다른 팀 땅은 우리 팀만 있는 상태로 CAPTURE_SECONDS 초 머물면 빼앗음 (두 팀 이상 있으면 경합으로 멈춤)
+ * - 각 팀의 시작 꼭짓점 2x2 청크는 처음부터 그 팀 땅
  */
 public final class Territory {
 
@@ -61,6 +63,34 @@ public final class Territory {
         return version;
     }
 
+    /** 블록 좌표의 땅 주인 (맵 밖이면 null). */
+    public GameTeam ownerAt(int x, int z) {
+        if (!MapLayout.inside(x, z)) return null;
+        return owner[(x - MapLayout.MIN) >> 4][(z - MapLayout.MIN) >> 4];
+    }
+
+    /** 맵 안이고 아무 팀도 안 먹은 땅이면 true. */
+    public boolean isUnclaimed(int x, int z) {
+        return MapLayout.inside(x, z) && ownerAt(x, z) == null;
+    }
+
+    /** [일반 땅] 도끼로 안 먹은 땅을 먹음. 성공하면 true. */
+    public boolean claim(int x, int z, GameTeam team) {
+        if (!isUnclaimed(x, z)) return false;
+        owner[(x - MapLayout.MIN) >> 4][(z - MapLayout.MIN) >> 4] = team;
+        version++;
+        return true;
+    }
+
+    /** [특수 땅] 도끼로 다른 팀 땅을 빼앗음. 빼앗긴 팀을 반환 (실패하면 null). */
+    public GameTeam convert(int x, int z, GameTeam team) {
+        GameTeam previous = ownerAt(x, z);
+        if (previous == null || previous == team) return null;
+        owner[(x - MapLayout.MIN) >> 4][(z - MapLayout.MIN) >> 4] = team;
+        version++;
+        return previous;
+    }
+
     public int count(GameTeam team) {
         int n = 0;
         for (GameTeam[] row : owner) for (GameTeam t : row) if (t == team) n++;
@@ -91,7 +121,7 @@ public final class Territory {
                     continue;
                 }
                 GameTeam t = teams.iterator().next();
-                if (owner[c][r] == t) {
+                if (owner[c][r] == null || owner[c][r] == t) {
                     progress[c][r] = 0;
                     continue;
                 }

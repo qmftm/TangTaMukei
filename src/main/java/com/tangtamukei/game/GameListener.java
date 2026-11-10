@@ -102,9 +102,101 @@ public final class GameListener implements Listener {
         if (game.book().isBook(event.getItem())) game.book().fill(event.getItem(), event.getPlayer());
     }
 
+    /** 발전과제 달성: 책 갱신 + 게임 중이면 [일반 땅] 도끼 지급 (레시피 해금 같은 숨은 과제는 제외). */
     @EventHandler
     public void onAdvancement(org.bukkit.event.player.PlayerAdvancementDoneEvent event) {
-        game.book().refresh(event.getPlayer());
+        Player player = event.getPlayer();
+        game.book().refresh(player);
+        var adv = event.getAdvancement();
+        if (game.teamOf(player) == null || adv.getDisplay() == null || adv.getKey().getKey().startsWith("recipes/")) return;
+        // 도전 발전과제: 일반 땅 5개 / 특수 땅 1개 중 선택
+        if (adv.getDisplay().frame() == io.papermc.paper.advancement.AdvancementDisplay.Frame.CHALLENGE) {
+            game.rewards().grant(player);
+            return;
+        }
+        player.getInventory().addItem(game.landToken().item()).values()
+                .forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
+        player.sendMessage(net.kyori.adventure.text.Component.text("발전과제 달성! ", net.kyori.adventure.text.format.NamedTextColor.GOLD)
+                .append(net.kyori.adventure.text.Component.text("[일반 땅]", net.kyori.adventure.text.format.NamedTextColor.GREEN))
+                .append(net.kyori.adventure.text.Component.text(" 획득 — 안 먹은 땅을 바라보고 버리세요", net.kyori.adventure.text.format.NamedTextColor.GRAY)));
+    }
+
+    /** 도전 보상 선택권 우클릭: 메뉴 다시 열기. */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onTicket(PlayerInteractEvent event) {
+        Action a = event.getAction();
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+        if (!game.rewards().isTicket(event.getItem())) return;
+        event.setCancelled(true);
+        game.rewards().open(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onRewardClick(org.bukkit.event.inventory.InventoryClickEvent event) {
+        if (!(event.getInventory().getHolder(false) instanceof RewardMenu.Menu menu)) return;
+        event.setCancelled(true);
+        if (event.getWhoClicked() instanceof Player player && event.getClickedInventory() == event.getView().getTopInventory()) {
+            menu.click(player, event.getRawSlot());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onRewardDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
+        if (event.getInventory().getHolder(false) instanceof RewardMenu.Menu) event.setCancelled(true);
+    }
+
+    /** [특수 땅] 도끼를 버리면: 3칸 안 바라보는 다른 팀 땅을 우리 팀 땅으로. 주인 없는 땅은 불가. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDropSpecial(org.bukkit.event.player.PlayerDropItemEvent event) {
+        if (!game.landToken().isSpecial(event.getItemDrop().getItemStack())) return;
+        Player player = event.getPlayer();
+        GameTeam team = game.teamOf(player);
+        int[] target = team != null && player.getWorld().equals(game.overworld())
+                ? LandToken.lookEnemy(player, game.territory(), team) : null;
+        GameTeam previous = target == null ? null : game.territory().convert(target[0], target[1], team);
+        if (previous == null) {
+            event.setCancelled(true);
+            player.sendActionBar(net.kyori.adventure.text.Component.text(
+                    "3칸 안의 다른 팀 땅을 바라보고 버려야 해요 (주인 없는 땅은 안 돼요)", net.kyori.adventure.text.format.NamedTextColor.RED));
+            return;
+        }
+        event.getItemDrop().remove();
+        World world = player.getWorld();
+        world.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.6f, 1.6f);
+        int cx = Math.floorDiv(target[0], 16) * 16 + 8, cz = Math.floorDiv(target[1], 16) * 16 + 8;
+        world.spawnParticle(org.bukkit.Particle.WITCH, cx, world.getHighestBlockYAt(cx, cz) + 1.5, cz, 80, 6, 1, 6);
+        for (Player p : org.bukkit.Bukkit.getOnlinePlayers()) {
+            GameTeam t = game.teamOf(p);
+            if (t == team) p.sendMessage(net.kyori.adventure.text.Component.text(
+                    player.getName() + " 님이 " + previous.displayName + " 팀 땅을 빼앗았어요! (" + game.territory().count(team) + "칸)", team.color));
+            else if (t == previous) p.sendMessage(net.kyori.adventure.text.Component.text(
+                    team.displayName + " 팀이 [특수 땅]으로 우리 땅을 빼앗았어요! (" + cx + ", " + cz + ")", net.kyori.adventure.text.format.NamedTextColor.RED));
+        }
+    }
+
+    /** [일반 땅] 도끼를 버리면: 3칸 안 바라보는 안 먹은 땅을 우리 팀 땅으로. 대상이 없으면 버리기 취소. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDropToken(org.bukkit.event.player.PlayerDropItemEvent event) {
+        if (!game.landToken().isToken(event.getItemDrop().getItemStack())) return;
+        Player player = event.getPlayer();
+        GameTeam team = game.teamOf(player);
+        int[] target = team != null && player.getWorld().equals(game.overworld())
+                ? LandToken.lookTarget(player, game.territory()) : null;
+        if (target == null || !game.territory().claim(target[0], target[1], team)) {
+            event.setCancelled(true);
+            player.sendActionBar(net.kyori.adventure.text.Component.text(
+                    "3칸 안의 안 먹은 땅을 바라보고 버려야 해요", net.kyori.adventure.text.format.NamedTextColor.RED));
+            return;
+        }
+        event.getItemDrop().remove(); // 도끼 사용
+        game.landToken().clear(player);
+        int cx = Math.floorDiv(target[0], 16) * 16 + 8, cz = Math.floorDiv(target[1], 16) * 16 + 8;
+        World world = player.getWorld();
+        world.playSound(player.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 1f, 1.4f);
+        world.spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER, cx, world.getHighestBlockYAt(cx, cz) + 1.5, cz, 60, 6, 1, 6);
+        net.kyori.adventure.text.Component msg = net.kyori.adventure.text.Component.text(
+                player.getName() + " 님이 땅을 먹었어요! (" + game.territory().count(team) + "칸)", team.color);
+        for (Player p : org.bukkit.Bukkit.getOnlinePlayers()) if (game.teamOf(p) == team) p.sendMessage(msg);
     }
 
     /** 침대가 부서졌거나 엔드에서 나올 때 게임 밖(메인 월드)으로 리스폰되지 않게. */
