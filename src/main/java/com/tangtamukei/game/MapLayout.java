@@ -3,6 +3,8 @@ package com.tangtamukei.game;
 import org.bukkit.generator.structure.Structure;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.Random;
 import java.util.List;
 
 /**
@@ -42,8 +44,13 @@ public final class MapLayout {
     };
 
     private final CellType[][] grid = new CellType[GRID][GRID]; // [col(x)][row(z)]
+    private final CellType.Variant[][] variants = new CellType.Variant[GRID][GRID];
+    private final Random random;
+    private final EnumMap<CellType, Integer> shifts = new EnumMap<>(CellType.class);
 
-    public MapLayout() {
+    /** 같은 시드면 같은 배치. 바이옴 변형은 시드에 따라 섞임. */
+    public MapLayout(long seed) {
+        this.random = new Random(seed);
         // 큰 구조물: 4변 가운데 (각각 이웃한 두 팀이 같은 거리)
         big(3, 0, CellType.VILLAGE);      // 북
         big(6, 3, CellType.MANSION);      // 동
@@ -51,7 +58,24 @@ public final class MapLayout {
         big(0, 3, CellType.MONUMENT);     // 서
         big(3, 3, CellType.STRONGHOLD);   // 중앙
 
-        fillRotated(grid, QUADRANT);
+        // 사분면 배치를 90도씩 돌려 채우고, 사분면마다 다른 바이옴 변형 지정
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 4; c++) {
+                CellType type = QUADRANT[r][c];
+                if (type == null) continue;
+                int shift = shifts.computeIfAbsent(type, t -> random.nextInt(t.variants.size()));
+                int row = r, col = c;
+                for (int rot = 0; rot < 4; rot++) {
+                    if (grid[col][row] == null) {
+                        grid[col][row] = type;
+                        variants[col][row] = type.variants.get((rot + shift) % type.variants.size());
+                    }
+                    int nRow = col, nCol = GRID - 1 - row;
+                    row = nRow;
+                    col = nCol;
+                }
+            }
+        }
     }
 
     /** 북서 사분면 배치를 시계방향으로 90도씩 돌려 빈 칸을 채움. grid[col][row], quadrant[row][col] */
@@ -73,9 +97,13 @@ public final class MapLayout {
     }
 
     private void big(int col, int row, CellType type) {
-        for (int dc = 0; dc < 2; dc++)
-            for (int dr = 0; dr < 2; dr++)
+        CellType.Variant variant = type.variants.get(random.nextInt(type.variants.size()));
+        for (int dc = 0; dc < 2; dc++) {
+            for (int dr = 0; dr < 2; dr++) {
                 grid[col + dc][row + dr] = type;
+                variants[col + dc][row + dr] = variant;
+            }
+        }
     }
 
     public static boolean inside(int x, int z) {
@@ -97,6 +125,23 @@ public final class MapLayout {
         return cell(Math.floorDiv(x - MIN, CELL), Math.floorDiv(z - MIN, CELL));
     }
 
+    public CellType.Variant nearestVariant(int x, int z) {
+        return variant(Math.floorDiv(x - MIN, CELL), Math.floorDiv(z - MIN, CELL));
+    }
+
+    public CellType.Variant variant(int col, int row) {
+        return variants[Math.clamp(col, 0, GRID - 1)][Math.clamp(row, 0, GRID - 1)];
+    }
+
+    /** 칸 높이 (자리 기본값 + 변형 보정). */
+    public int height(int col, int row) {
+        return cell(col, row).height + variant(col, row).heightOffset();
+    }
+
+    public int roughness(int col, int row) {
+        return cell(col, row).roughness + variant(col, row).roughnessOffset();
+    }
+
     /** 칸 인덱스로 조회 (범위 밖은 가장 가까운 칸). */
     public CellType cell(int col, int row) {
         col = Math.clamp(col, 0, GRID - 1);
@@ -111,7 +156,8 @@ public final class MapLayout {
         for (int col = 0; col < GRID; col++) {
             for (int row = 0; row < GRID; row++) {
                 CellType type = grid[col][row];
-                if (done[col][row] || type.structure == null) continue;
+                Structure structure = variants[col][row].structure();
+                if (done[col][row] || structure == null) continue;
                 // 작은 구조물은 칸의 첫 청크에 (대부분 청크 모서리부터 ~20블록 크기라 칸 안에 들어감)
                 int x = MIN + col * CELL + 4;
                 int z = MIN + row * CELL + 4;
@@ -133,7 +179,7 @@ public final class MapLayout {
                         }
                     }
                 }
-                list.add(new Placement(type.structure, x, z));
+                list.add(new Placement(structure, x, z));
             }
         }
         return list;

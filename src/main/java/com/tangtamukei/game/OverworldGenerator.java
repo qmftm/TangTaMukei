@@ -47,11 +47,12 @@ public final class OverworldGenerator extends ChunkGenerator {
         int c0 = (int) Math.floor(u), r0 = (int) Math.floor(v);
         double fu = smooth(u - c0), fv = smooth(v - r0);
 
-        CellType a = layout.cell(c0, r0), b = layout.cell(c0 + 1, r0);
-        CellType c = layout.cell(c0, r0 + 1), d = layout.cell(c0 + 1, r0 + 1);
-
-        double base = lerp(fv, lerp(fu, a.height, b.height), lerp(fu, c.height, d.height));
-        double rough = lerp(fv, lerp(fu, a.roughness, b.roughness), lerp(fu, c.roughness, d.roughness));
+        double base = lerp(fv,
+                lerp(fu, layout.height(c0, r0), layout.height(c0 + 1, r0)),
+                lerp(fu, layout.height(c0, r0 + 1), layout.height(c0 + 1, r0 + 1)));
+        double rough = lerp(fv,
+                lerp(fu, layout.roughness(c0, r0), layout.roughness(c0 + 1, r0)),
+                lerp(fu, layout.roughness(c0, r0 + 1), layout.roughness(c0 + 1, r0 + 1)));
 
         double n = noise.noise(x, z, 0.5, 0.5, true);
         int y = (int) Math.round(base + n * rough);
@@ -157,15 +158,15 @@ public final class OverworldGenerator extends ChunkGenerator {
             @Override
             public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
                 CellType type = layout.nearest(x, z);
-                if (y < 0 && type.undergroundBiome != null) return type.undergroundBiome;
-                return type.biome;
+                if (type.undergroundBiome != null && y < type.undergroundBelow()) return type.undergroundBiome;
+                return layout.nearestVariant(x, z).biome();
             }
 
             @Override
             public List<Biome> getBiomes(WorldInfo worldInfo) {
                 List<Biome> list = new ArrayList<>();
                 for (CellType t : CellType.values()) {
-                    if (!list.contains(t.biome)) list.add(t.biome);
+                    for (CellType.Variant v : t.variants) if (!list.contains(v.biome())) list.add(v.biome());
                     if (t.undergroundBiome != null && !list.contains(t.undergroundBiome)) list.add(t.undergroundBiome);
                 }
                 return list;

@@ -55,7 +55,7 @@ public final class GameManager {
 
     private final JavaPlugin plugin;
     private final LobbyManager lobby;
-    private final MapLayout layout = new MapLayout();
+    private MapLayout layout = new MapLayout(0);
     private final NetherLayout netherLayout = new NetherLayout();
     private final Map<UUID, GameTeam> teams = new HashMap<>();
 
@@ -117,6 +117,7 @@ public final class GameManager {
 
         long seed = ThreadLocalRandom.current().nextLong();
         String name = WORLD_PREFIX + System.currentTimeMillis();
+        layout = new MapLayout(seed);
 
         overworld = new WorldCreator(name)
                 .environment(World.Environment.NORMAL)
