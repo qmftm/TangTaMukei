@@ -256,7 +256,6 @@ public final class GameManager {
                 ? new Location(overworld, portal.getX(), portal.getY(), portal.getZ())
                 : new Location(overworld, 0.5, 30, 0.5);
         overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
-        gameMap.captureTerrain(overworld);
         plugin.getLogger().info("오버월드 복사 완료: 영역 " + pasted.regions().size() + "개, 몹 " + copied
                 + "마리, 엔드 포탈 " + (portal != null ? "y " + (int) portal.getY() : "못 찾음")
                 + " (" + (System.currentTimeMillis() - prepareStarted) / 1000 + "초)");
