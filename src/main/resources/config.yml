@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────
+#  TangTaMukei 로비 설정
+#  텍스트는 MiniMessage 형식 (https://docs.advntr.dev/minimessage/format.html)
+#  베드락 유저에게는 Geyser 가 자동으로 가장 가까운 색으로 바꿔 보여줍니다.
+# ─────────────────────────────────────────────
+
+# 로비 스폰 위치. 게임 안에서 /setlobby 로 지정하세요.
+# world 가 비어 있으면 서버 기본 월드의 스폰을 사용합니다.
+spawn:
+  world: ''
+  x: 0.5
+  y: 100.0
+  z: 0.5
+  yaw: 0.0
+  pitch: 0.0
+
+join:
+  teleport-to-spawn: true
+  gamemode: ADVENTURE
+  clear-inventory: true
+  heal: true
+  # 접속 메시지 (빈 문자열 = 메시지 숨김). <player> = 플레이어 이름
+  join-message: '<gray>[<green>+</green>] <white><player>'
+  quit-message: '<gray>[<red>-</red>] <white><player>'
+  welcome-title: '<gradient:#ffb347:#ff6f61><bold>TangTaMukei</bold></gradient>'
+  welcome-subtitle: '<white>환영합니다, <yellow><player></yellow>님!'
+  welcome-lines:
+    - ''
+    - '  <gold><bold>TangTaMukei</bold></gold> <gray>에 오신 것을 환영합니다!'
+    - '  <gray>나침반을 우클릭해 게임을 선택하세요.'
+    - ''
+  sound: ENTITY_PLAYER_LEVELUP
+
+protection:
+  # 로비 월드(스폰이 있는 월드) 안에서만 적용됩니다.
+  block-break: true
+  block-place: true
+  damage: true
+  hunger: true
+  item-drop: true
+  item-pickup: true
+  inventory-move: true
+  # 이 높이보다 떨어지면 스폰으로 되돌림
+  void-y: 0
+
+# 핫바 아이템. action:
+#   menu        = 게임 선택 메뉴 열기
+#   visibility  = 다른 플레이어 숨기기/보이기
+#   command:<명령어> = 플레이어가 명령어 실행 (예: command:spawn)
+items:
+  selector:
+    slot: 0
+    material: COMPASS
+    name: '<green><bold>게임 선택</bold></green> <gray>(우클릭)'
+    lore:
+      - '<gray>우클릭해서 게임을 고르세요.'
+    action: menu
+  visibility:
+    slot: 8
+    material: LIME_DYE
+    hidden-material: GRAY_DYE
+    name: '<aqua>플레이어: <green>보임</green> <gray>(우클릭)'
+    hidden-name: '<aqua>플레이어: <red>숨김</red> <gray>(우클릭)'
+    lore:
+      - '<gray>다른 플레이어를 숨기거나 보이게 합니다.'
+    action: visibility
+
+# 게임 선택 메뉴
+#   Java 유저: 상자 GUI
+#   Bedrock 유저(Floodgate 있을 때): 베드락 전용 버튼 폼
+# action:
+#   server:<서버이름>   = BungeeCord/Velocity 서버로 이동
+#   command:<명령어>    = 플레이어가 명령어 실행
+#   message:<텍스트>    = 메시지 출력
+menu:
+  title: '<dark_gray>게임 선택'
+  rows: 3
+  entries:
+    survival:
+      slot: 11
+      material: GRASS_BLOCK
+      name: '<green><bold>야생</bold>'
+      lore:
+        - '<gray>클릭해서 야생 서버로 이동'
+      # 베드락 폼 버튼 이미지 (선택). 텍스처 경로 또는 https URL
+      bedrock-image: 'textures/blocks/grass_side_carried'
+      action: 'server:survival'
+    minigame:
+      slot: 13
+      material: DIAMOND_SWORD
+      name: '<red><bold>미니게임</bold>'
+      lore:
+        - '<gray>클릭해서 미니게임 서버로 이동'
+      bedrock-image: 'textures/items/diamond_sword'
+      action: 'server:minigame'
+    spawn:
+      slot: 15
+      material: ENDER_PEARL
+      name: '<aqua><bold>스폰으로</bold>'
+      lore:
+        - '<gray>로비 스폰으로 이동'
+      bedrock-image: 'textures/items/ender_pearl'
+      action: 'command:lobby'
+
+messages:
+  prefix: '<gold>[로비]</gold> '
+  teleported: '<green>로비로 이동했습니다.'
+  spawn-set: '<green>로비 스폰을 현재 위치로 설정했습니다.'
+  reloaded: '<green>설정을 다시 불러왔습니다.'
+  players-hidden: '<gray>다른 플레이어를 <red>숨겼습니다</red>.'
+  players-shown: '<gray>다른 플레이어가 <green>보입니다</green>.'
+  connecting: '<yellow><server></yellow> <gray>서버로 이동 중...'
+  players-only: '<red>플레이어만 사용할 수 있습니다.'

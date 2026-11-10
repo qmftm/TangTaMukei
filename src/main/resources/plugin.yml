@@ -1,0 +1,14 @@
+name: TangTaMukei
+version: '${version}'
+main: com.tangtamukei.TangTaMukei
+api-version: '26.3'
+description: 접속 시 로비 (Java + Bedrock/Geyser 지원)
+softdepend: [floodgate, Geyser-Spigot]
+
+permissions:
+  tangtamukei.admin:
+    description: 로비 설정 명령어 (/setlobby, /lobbyreload)
+    default: op
+  tangtamukei.build:
+    description: 크리에이티브 모드일 때 로비 보호 무시
+    default: op
