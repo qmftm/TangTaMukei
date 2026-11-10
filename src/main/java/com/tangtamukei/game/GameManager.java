@@ -451,7 +451,7 @@ public final class GameManager {
             player.teleportAsync(spawn).thenRun(() -> preparePlayer(player, t));
         }
         state = State.RUNNING;
-        territory.start(plugin, overworld, used, this::teamOf);
+        territory.start(used);
         World world = overworld;
         landTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> landToken.tick(world, territory, this::teamOf), 1L, 1L);
         pendingTeams = 0;
@@ -516,7 +516,6 @@ public final class GameManager {
             return true;
         }
         state = State.IDLE;
-        territory.stop();
         if (landTask != null) landTask.cancel();
         landTask = null;
         landToken.clearAll();
