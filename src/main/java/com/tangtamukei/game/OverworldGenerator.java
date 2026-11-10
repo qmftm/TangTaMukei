@@ -41,24 +41,24 @@ public final class OverworldGenerator extends ChunkGenerator {
 
     /** (x, z) 의 지표면 높이 (가장 위 고체 블록의 y). */
     public int surfaceY(int x, int z) {
-        // 칸 중심 4개의 높이/굴곡을 부드럽게 보간
-        double u = (x - MapLayout.MIN) / (double) MapLayout.CELL - 0.5;
-        double v = (z - MapLayout.MIN) / (double) MapLayout.CELL - 0.5;
+        // 청크 중심 4개의 높이/굴곡을 부드럽게 보간
+        double u = (x - MapLayout.MIN) / 16.0 - 0.5;
+        double v = (z - MapLayout.MIN) / 16.0 - 0.5;
         int c0 = (int) Math.floor(u), r0 = (int) Math.floor(v);
         double fu = smooth(u - c0), fv = smooth(v - r0);
 
         double base = lerp(fv,
-                lerp(fu, layout.height(c0, r0), layout.height(c0 + 1, r0)),
-                lerp(fu, layout.height(c0, r0 + 1), layout.height(c0 + 1, r0 + 1)));
+                lerp(fu, layout.chunkHeight(c0, r0), layout.chunkHeight(c0 + 1, r0)),
+                lerp(fu, layout.chunkHeight(c0, r0 + 1), layout.chunkHeight(c0 + 1, r0 + 1)));
         double rough = lerp(fv,
-                lerp(fu, layout.roughness(c0, r0), layout.roughness(c0 + 1, r0)),
-                lerp(fu, layout.roughness(c0, r0 + 1), layout.roughness(c0 + 1, r0 + 1)));
+                lerp(fu, layout.chunkRoughness(c0, r0), layout.chunkRoughness(c0 + 1, r0)),
+                lerp(fu, layout.chunkRoughness(c0, r0 + 1), layout.chunkRoughness(c0 + 1, r0 + 1)));
 
         double n = noise.noise(x, z, 0.5, 0.5, true);
         int y = (int) Math.round(base + n * rough);
 
         // 해안 정리: 육지 칸은 항상 물 위, 바다 칸은 항상 물 아래 (경계는 얕은 턱)
-        CellType own = layout.nearest(x, z);
+        CellType own = layout.typeAt(x, z);
         if (own.isWater()) return Math.min(y, SEA_LEVEL - 2);
         if (own == CellType.SWAMP) return Math.max(y, SEA_LEVEL - 2); // 늪은 물웅덩이 허용
         return Math.max(y, SEA_LEVEL + 1);
@@ -157,9 +157,9 @@ public final class OverworldGenerator extends ChunkGenerator {
         return new BiomeProvider() {
             @Override
             public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
-                CellType type = layout.nearest(x, z);
+                CellType type = layout.typeAt(x, z);
                 if (type.undergroundBiome != null && y < type.undergroundBelow()) return type.undergroundBiome;
-                return layout.nearestVariant(x, z).biome();
+                return layout.biomeAt(x, z);
             }
 
             @Override

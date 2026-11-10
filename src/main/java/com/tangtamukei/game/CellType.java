@@ -7,24 +7,32 @@ import java.util.List;
 
 /**
  * 맵의 한 칸(2x2 청크) 자리 종류.
- * 각 자리에는 비슷한 계열의 바이옴 변형이 여러 개 있고, 사분면마다 다른 변형이 나옵니다
- * (예: 숲 자리 → 참나무숲 / 자작나무숲 / 꽃숲 / 얼룩숲). 게임마다 섞임.
- * 큰 구조물 자리는 게임마다 변형 하나를 고릅니다.
+ * 구조물 자리: 비슷한 계열의 바이옴 변형 중 사분면마다 다른 변형이 나옴 (게임마다 섞임).
+ *             큰 구조물 자리는 게임마다 변형 하나.
+ * 야생 자리(WILD_*): 구조물 없는 일반 바이옴 칸. 4개 청크가 각각 다른 바이옴 (1청크 단위).
  */
 public enum CellType {
 
     //            높이 굴곡 지하 바이옴 (y < 30)        변형들
     SPAWN        (67,  2, null,
             v(Biome.PLAINS), v(Biome.SUNFLOWER_PLAINS), v(Biome.MEADOW, null, 2, 1)),
-    FOREST       (70,  5, null,
-            v(Biome.FOREST), v(Biome.BIRCH_FOREST), v(Biome.FLOWER_FOREST), v(Biome.DAPPLED_FOREST)),
+    // 야생(나무): 스폰 옆이라 나무가 있는 바이옴만. 청크마다 다른 바이옴
+    WILD_FOREST  (70,  5, null,
+            v(Biome.FOREST), v(Biome.BIRCH_FOREST), v(Biome.FLOWER_FOREST), v(Biome.DAPPLED_FOREST),
+            v(Biome.OLD_GROWTH_BIRCH_FOREST, null, 2, 0), v(Biome.DARK_FOREST),
+            v(Biome.TAIGA, null, 2, 1), v(Biome.OLD_GROWTH_SPRUCE_TAIGA, null, 3, 1), v(Biome.WINDSWEPT_FOREST, null, 10, 6)),
+    // 야생(혼합): 벚꽃 숲 2청크는 항상 + 산·설원 등 2청크
+    WILD_MIXED   (72,  5, Biome.LUSH_CAVES,
+            v(Biome.CHERRY_GROVE, null, 14, 7),
+            v(Biome.MEADOW, null, 6, 0), v(Biome.GROVE, null, 12, 3), v(Biome.SNOWY_PLAINS, null, -3, -2),
+            v(Biome.ICE_SPIKES, null, -3, -2), v(Biome.WINDSWEPT_HILLS, null, 14, 9), v(Biome.STONY_PEAKS, null, 22, 10),
+            v(Biome.SNOWY_SLOPES, null, 18, 6), v(Biome.SUNFLOWER_PLAINS, null, -4, -2), v(Biome.SAVANNA, null, -2, -2),
+            v(Biome.SPARSE_JUNGLE, null, 0, 0), v(Biome.WINDSWEPT_GRAVELLY_HILLS, null, 12, 8)),
     TAIGA        (72,  6, null,
-            v(Biome.TAIGA),
+            v(Biome.TAIGA, Structure.TRAIL_RUINS, 0, 0),
             v(Biome.OLD_GROWTH_SPRUCE_TAIGA, Structure.TRAIL_RUINS, 2, 0),
             v(Biome.OLD_GROWTH_PINE_TAIGA, Structure.TRAIL_RUINS, 2, 0),
             v(Biome.SNOWY_TAIGA, Structure.IGLOO, 0, 0)),
-    CHERRY_GROVE (86, 12, Biome.LUSH_CAVES,
-            v(Biome.CHERRY_GROVE)),
     BADLANDS     (78, 10, Biome.DRIPSTONE_CAVES,
             v(Biome.BADLANDS, Structure.MINESHAFT_MESA),
             v(Biome.WOODED_BADLANDS, Structure.MINESHAFT_MESA, 4, 0),
@@ -96,6 +104,10 @@ public enum CellType {
 
     private static Variant v(Biome biome, Structure structure, int dh, int dr) {
         return new Variant(biome, structure, dh, dr);
+    }
+
+    public boolean isWild() {
+        return this == WILD_FOREST || this == WILD_MIXED;
     }
 
     public int undergroundBelow() {

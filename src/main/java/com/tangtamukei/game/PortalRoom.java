@@ -12,7 +12,10 @@ import org.bukkit.entity.EntityType;
 
 import org.bukkit.ChunkSnapshot;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -153,9 +156,7 @@ final class PortalRoom {
         int minY = Math.max(world.getMinHeight() + 2, -50), maxY = 60;
         int doorY = FLOOR_Y + 1;
 
-        int[] best = null;
-        int[] bestDoor = null;
-        int bestCost = Integer.MAX_VALUE;
+        List<int[]> candidates = new ArrayList<>(); // {cost, x, y, z, doorIndex}
         for (int cx = minChunk; cx <= maxChunk; cx++) {
             for (int cz = minChunk; cz <= maxChunk; cz++) {
                 ChunkSnapshot snap = world.getChunkAt(cx, cz).getChunkSnapshot(false, false, false);
@@ -166,26 +167,97 @@ final class PortalRoom {
                         for (int y = minY; y <= maxY; y++) {
                             if (!snap.getBlockType(lx, y, lz).isAir() || !snap.getBlockType(lx, y + 1, lz).isAir()) continue;
                             if (!STRONGHOLD_FLOOR.contains(snap.getBlockType(lx, y - 1, lz))) continue;
-                            for (int[] door : DOORS) {
-                                int horizontal = Math.abs(x - door[0]) + Math.abs(z - door[1]);
+                            int bestCost = Integer.MAX_VALUE, bestDoor = -1;
+                            for (int d = 0; d < DOORS.length; d++) {
+                                int horizontal = Math.abs(x - DOORS[d][0]) + Math.abs(z - DOORS[d][1]);
                                 int dy = Math.abs(y - doorY);
                                 if (horizontal < dy) continue; // 계단으로 갈 수 없을 만큼 가파름
-                                int cost = horizontal + dy;
-                                if (cost < bestCost) {
-                                    bestCost = cost;
-                                    best = new int[]{x, y, z};
-                                    bestDoor = door;
+                                // 입구 바깥쪽에 있는 곳만 (통로가 포탈 방을 가로지르지 않게)
+                                if ((x - DOORS[d][0]) * DOORS[d][2] + (z - DOORS[d][1]) * DOORS[d][3] < 0) continue;
+                                if (horizontal + dy < bestCost) {
+                                    bestCost = horizontal + dy;
+                                    bestDoor = d;
                                 }
                             }
+                            if (bestDoor >= 0) candidates.add(new int[]{bestCost, x, y, z, bestDoor});
                         }
                     }
                 }
             }
         }
-        if (best == null) return false;
+        if (candidates.isEmpty()) return false;
+        candidates.sort(Comparator.comparingInt(c -> c[0]));
+
+        // 가까운 순서로, 걸어서 요새 본체(문·철창·책장 등)까지 갈 수 있는 곳을 고름
+        // (포탈 방을 지으며 끊긴 작은 조각에 연결되지 않도록)
+        Set<Long> badCells = new HashSet<>();
+        int[] chosen = candidates.getFirst();
+        int checked = 0;
+        for (int[] c : candidates) {
+            if (badCells.contains(key(c[1], c[2], c[3]))) continue;
+            if (wellConnected(world, c[1], c[2], c[3], badCells)) {
+                chosen = c;
+                break;
+            }
+            if (++checked >= 60) break;
+        }
+        int[] best = {chosen[1], chosen[2], chosen[3]};
+        int[] bestDoor = DOORS[chosen[4]];
         dig(world, bestDoor, doorY, best, random);
         lastTunnel = "(" + bestDoor[0] + "," + doorY + "," + bestDoor[1] + ") -> (" + best[0] + "," + best[1] + "," + best[2] + ")";
         return true;
+    }
+
+    private static final Set<Material> STRONGHOLD_FEATURES = Set.of(
+            Material.IRON_BARS, Material.BOOKSHELF, Material.OAK_DOOR, Material.IRON_DOOR,
+            Material.WALL_TORCH, Material.STONE_BUTTON, Material.COBWEB);
+
+    private static long key(int x, int y, int z) {
+        return ((long) (x + 4096) << 40) | ((long) (y + 4096) << 20) | (z + 4096);
+    }
+
+    private static boolean passable(Material m) {
+        return m.isAir() || m == Material.WATER || m == Material.TORCH || m == Material.WALL_TORCH
+                || m == Material.LANTERN || m == Material.COBWEB || m.name().endsWith("_DOOR");
+    }
+
+    /** (x,y,z)에서 걸어서(한 칸씩 오르내리며) 요새 구조물을 충분히 만나면 true. 실패한 영역은 badCells 에 기록. */
+    private static boolean wellConnected(World world, int sx, int sy, int sz, Set<Long> badCells) {
+        ArrayDeque<int[]> queue = new ArrayDeque<>();
+        Set<Long> seen = new HashSet<>();
+        queue.add(new int[]{sx, sy, sz});
+        int features = 0;
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        while (!queue.isEmpty() && seen.size() < 8000) {
+            int[] c = queue.poll();
+            if (!seen.add(key(c[0], c[1], c[2]))) continue;
+            if (Math.abs(c[0]) <= HALF_X && Math.abs(c[2]) <= HALF_Z) continue; // 포탈 방 안은 제외
+            for (int[] d : dirs) {
+                int nx = c[0] + d[0], nz = c[2] + d[1];
+                if (!MapLayout.inside(nx, nz)) continue;
+                for (int dy = 0; dy <= 1; dy++) {
+                    if (STRONGHOLD_FEATURES.contains(world.getBlockAt(nx, c[1] + dy, nz).getType())) features++;
+                }
+                if (features >= 40) return true;
+                for (int up = -1; up <= 1; up++) {
+                    int ny = c[1] + up;
+                    if (ny > 60) continue;
+                    Material feet = world.getBlockAt(nx, ny, nz).getType();
+                    Material head = world.getBlockAt(nx, ny + 1, nz).getType();
+                    Material floor = world.getBlockAt(nx, ny - 1, nz).getType();
+                    boolean step = feet.name().endsWith("_STAIRS") || feet.name().endsWith("_SLAB");
+                    if (step) {
+                        if (passable(head) && passable(world.getBlockAt(nx, ny + 2, nz).getType())) queue.add(new int[]{nx, ny + 1, nz});
+                        continue;
+                    }
+                    if (!passable(feet) || !passable(head) || passable(floor)) continue;
+                    if (up == 1 && !passable(world.getBlockAt(c[0], c[1] + 2, c[2]).getType())) continue;
+                    queue.add(new int[]{nx, ny, nz});
+                }
+            }
+        }
+        badCells.addAll(seen);
+        return false;
     }
 
     private static void dig(World world, int[] door, int doorY, int[] target, Random random) {

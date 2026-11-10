@@ -2,7 +2,10 @@ package com.tangtamukei.game;
 
 import org.bukkit.generator.structure.Structure;
 
+import org.bukkit.block.Biome;
+
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Random;
 import java.util.List;
@@ -15,8 +18,8 @@ import java.util.List;
  *
  * <pre>
  *  (x →)   0       1       2       3      4       5       6       7
- *  0     [레드]   숲      메사    ┌─── 마을 ───┐ 난파선  타이가  [옐로]
- *  1     타이가   벚꽃    사막    └────────────┘ 해저유적 벚꽃    숲
+ *  0     [레드]  야생1   메사    ┌─── 마을 ───┐ 난파선  타이가  [옐로]
+ *  1     타이가  야생2   사막    └────────────┘ 해저유적 벚꽃    숲
  *  2     난파선  해저유적 전초기지 대나무   늪   전초기지 사막    메사
  *  3     ┌ 해저 신전 ┐    늪     ┌─── 요새 ───┐ 대나무  ┌ 맨션 ─┐
  *  4     └──────────┘   대나무   └── (중앙) ──┘  늪    └───────┘
@@ -37,8 +40,8 @@ public final class MapLayout {
 
     /** 북서 사분면(레드) 기준 배치. null = 큰 구조물/중앙 자리. [row(z)][col(x)] */
     private static final CellType[][] QUADRANT = {
-            {CellType.SPAWN,     CellType.FOREST,       CellType.BADLANDS,    null},
-            {CellType.TAIGA,     CellType.CHERRY_GROVE, CellType.DESERT,      null},
+            {CellType.SPAWN,     CellType.WILD_FOREST,  CellType.BADLANDS,    null},
+            {CellType.TAIGA,     CellType.WILD_MIXED,   CellType.DESERT,      null},
             {CellType.SHIPWRECK, CellType.OCEAN_RUINS,  CellType.OUTPOST,     CellType.BAMBOO},
             {null,               null,                  CellType.SWAMP,       null},
     };
@@ -47,6 +50,13 @@ public final class MapLayout {
     private final CellType.Variant[][] variants = new CellType.Variant[GRID][GRID];
     private final Random random;
     private final EnumMap<CellType, Integer> shifts = new EnumMap<>(CellType.class);
+
+    /** 청크 단위 (16x16): 바이옴, 높이, 굴곡, 자리 종류. [chunkCol][chunkRow] */
+    private static final int CHUNKS = SIZE >> 4;
+    private final Biome[][] chunkBiome = new Biome[CHUNKS][CHUNKS];
+    private final int[][] chunkHeight = new int[CHUNKS][CHUNKS];
+    private final int[][] chunkRough = new int[CHUNKS][CHUNKS];
+    private final CellType[][] chunkType = new CellType[CHUNKS][CHUNKS];
 
     /** 같은 시드면 같은 배치. 바이옴 변형은 시드에 따라 섞임. */
     public MapLayout(long seed) {
@@ -76,6 +86,79 @@ public final class MapLayout {
                 }
             }
         }
+        buildChunks();
+    }
+
+    /** 칸 → 청크 단위로 펼치고, 야생 칸은 청크마다 다른 바이옴 (북서 사분면에서 정해 90도씩 회전). */
+    private void buildChunks() {
+        for (int col = 0; col < GRID; col++) {
+            for (int row = 0; row < GRID; row++) {
+                CellType type = grid[col][row];
+                CellType.Variant v = variants[col][row];
+                for (int dc = 0; dc < 2; dc++)
+                    for (int dr = 0; dr < 2; dr++)
+                        setChunk(col * 2 + dc, row * 2 + dr, type, v);
+            }
+        }
+        for (int col = 0; col < GRID / 2; col++) {
+            for (int row = 0; row < GRID / 2; row++) {
+                CellType type = grid[col][row];
+                if (!type.isWild()) continue;
+                List<CellType.Variant> pool = new ArrayList<>(type.variants);
+                List<CellType.Variant> picked = new ArrayList<>();
+                Collections.shuffle(pool.subList(type == CellType.WILD_MIXED ? 1 : 0, pool.size()), random);
+                if (type == CellType.WILD_MIXED) {
+                    // 벚꽃 숲은 항상 2청크 (나란히), 나머지 2청크는 랜덤
+                    CellType.Variant cherry = pool.removeFirst();
+                    boolean vertical = random.nextBoolean();
+                    picked.add(cherry);
+                    picked.add(vertical ? pool.removeFirst() : cherry);
+                    picked.add(vertical ? cherry : pool.removeFirst());
+                    picked.add(pool.removeFirst());
+                } else {
+                    while (picked.size() < 4) picked.add(pool.removeFirst());
+                }
+
+                for (int i = 0; i < 4; i++) {
+                    int c = col * 2 + (i & 1), r = row * 2 + (i >> 1);
+                    for (int rot = 0; rot < 4; rot++) {
+                        setChunk(c, r, type, picked.get(i));
+                        int nr = c, nc = CHUNKS - 1 - r; // 90도 회전
+                        r = nr;
+                        c = nc;
+                    }
+                }
+            }
+        }
+    }
+
+    private void setChunk(int c, int r, CellType type, CellType.Variant v) {
+        chunkType[c][r] = type;
+        chunkBiome[c][r] = v.biome();
+        chunkHeight[c][r] = type.height + v.heightOffset();
+        chunkRough[c][r] = type.roughness + v.roughnessOffset();
+    }
+
+    private static int chunkIndex(int block) {
+        return Math.clamp(Math.floorDiv(block - MIN, 16), 0, CHUNKS - 1);
+    }
+
+    /** 맵 밖 좌표는 가장 가까운 청크 기준. */
+    public Biome biomeAt(int x, int z) {
+        return chunkBiome[chunkIndex(x)][chunkIndex(z)];
+    }
+
+    public CellType typeAt(int x, int z) {
+        return chunkType[chunkIndex(x)][chunkIndex(z)];
+    }
+
+    /** 청크 인덱스(0~15, 범위 밖은 가장자리)의 높이/굴곡. */
+    public int chunkHeight(int c, int r) {
+        return chunkHeight[Math.clamp(c, 0, CHUNKS - 1)][Math.clamp(r, 0, CHUNKS - 1)];
+    }
+
+    public int chunkRoughness(int c, int r) {
+        return chunkRough[Math.clamp(c, 0, CHUNKS - 1)][Math.clamp(r, 0, CHUNKS - 1)];
     }
 
     /** 북서 사분면 배치를 시계방향으로 90도씩 돌려 빈 칸을 채움. grid[col][row], quadrant[row][col] */
@@ -123,23 +206,6 @@ public final class MapLayout {
     /** 맵 밖 좌표는 가장 가까운 칸으로 (바이옴 검사용). */
     public CellType nearest(int x, int z) {
         return cell(Math.floorDiv(x - MIN, CELL), Math.floorDiv(z - MIN, CELL));
-    }
-
-    public CellType.Variant nearestVariant(int x, int z) {
-        return variant(Math.floorDiv(x - MIN, CELL), Math.floorDiv(z - MIN, CELL));
-    }
-
-    public CellType.Variant variant(int col, int row) {
-        return variants[Math.clamp(col, 0, GRID - 1)][Math.clamp(row, 0, GRID - 1)];
-    }
-
-    /** 칸 높이 (자리 기본값 + 변형 보정). */
-    public int height(int col, int row) {
-        return cell(col, row).height + variant(col, row).heightOffset();
-    }
-
-    public int roughness(int col, int row) {
-        return cell(col, row).roughness + variant(col, row).roughnessOffset();
     }
 
     /** 칸 인덱스로 조회 (범위 밖은 가장 가까운 칸). */
