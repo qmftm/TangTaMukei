@@ -30,11 +30,13 @@ public final class LobbyManager {
     private final JavaPlugin plugin;
     private final BedrockSupport bedrock;
     private final NamespacedKey itemKey;
+    private final LobbyWorld lobbyWorld;
     private final Set<UUID> hidingOthers = new HashSet<>();
 
-    public LobbyManager(JavaPlugin plugin, BedrockSupport bedrock) {
+    public LobbyManager(JavaPlugin plugin, BedrockSupport bedrock, LobbyWorld lobbyWorld) {
         this.plugin = plugin;
         this.bedrock = bedrock;
+        this.lobbyWorld = lobbyWorld;
         this.itemKey = new NamespacedKey(plugin, "lobby_item");
     }
 
@@ -50,6 +52,10 @@ public final class LobbyManager {
         return bedrock;
     }
 
+    public LobbyWorld lobbyWorld() {
+        return lobbyWorld;
+    }
+
     // ───────────── 스폰 ─────────────
 
     public Location spawn() {
@@ -57,7 +63,9 @@ public final class LobbyManager {
         String worldName = s == null ? "" : s.getString("world", "");
         World world = worldName.isEmpty() ? null : Bukkit.getWorld(worldName);
         if (world == null) {
-            return Bukkit.getWorlds().getFirst().getSpawnLocation().toCenterLocation();
+            // /setlobby 를 안 했으면 허공 로비 구조물 중앙
+            Location def = lobbyWorld.defaultSpawn();
+            return def != null ? def : Bukkit.getWorlds().getFirst().getSpawnLocation().toCenterLocation();
         }
         return new Location(world, s.getDouble("x"), s.getDouble("y"), s.getDouble("z"),
                 (float) s.getDouble("yaw"), (float) s.getDouble("pitch"));

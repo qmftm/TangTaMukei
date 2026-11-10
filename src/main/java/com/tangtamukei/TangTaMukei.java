@@ -4,6 +4,7 @@ import com.tangtamukei.lobby.BedrockSupport;
 import com.tangtamukei.lobby.LobbyCommands;
 import com.tangtamukei.lobby.LobbyListener;
 import com.tangtamukei.lobby.LobbyManager;
+import com.tangtamukei.lobby.LobbyWorld;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -16,7 +17,9 @@ public final class TangTaMukei extends JavaPlugin {
         saveDefaultConfig();
 
         BedrockSupport bedrock = BedrockSupport.create(this);
-        lobby = new LobbyManager(this, bedrock);
+        LobbyWorld lobbyWorld = new LobbyWorld(this);
+        lobbyWorld.load();
+        lobby = new LobbyManager(this, bedrock, lobbyWorld);
 
         // BungeeCord / Velocity 서버 이동용 채널
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");

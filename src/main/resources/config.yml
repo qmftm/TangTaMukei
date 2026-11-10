@@ -4,8 +4,16 @@
 #  베드락 유저에게는 Geyser 가 자동으로 가장 가까운 색으로 바꿔 보여줍니다.
 # ─────────────────────────────────────────────
 
+# 허공 로비 월드: 아무것도 없는 월드를 만들고 공중에 로비 구조물을 자동으로 지음
+#   (원형 공중 섬 + 게임 포탈 아치 4개 + 벚나무 + 가로등, 가장자리 투명 벽)
+#   구조물을 다시 지으려면 /lobbyrebuild
+lobby-world:
+  enabled: true
+  name: lobby
+  height: 100   # 플레이어가 서는 높이
+
 # 로비 스폰 위치. 게임 안에서 /setlobby 로 지정하세요.
-# world 가 비어 있으면 서버 기본 월드의 스폰을 사용합니다.
+# world 가 비어 있으면 위 로비 구조물 중앙을 사용합니다.
 spawn:
   world: ''
   x: 0.5
@@ -41,7 +49,7 @@ protection:
   item-pickup: true
   inventory-move: true
   # 이 높이보다 떨어지면 스폰으로 되돌림
-  void-y: 0
+  void-y: 60
 
 # 핫바 아이템. action:
 #   menu        = 게임 선택 메뉴 열기
@@ -107,6 +115,8 @@ messages:
   teleported: '<green>로비로 이동했습니다.'
   spawn-set: '<green>로비 스폰을 현재 위치로 설정했습니다.'
   reloaded: '<green>설정을 다시 불러왔습니다.'
+  rebuilt: '<green>로비 구조물을 다시 지었습니다.'
+  no-lobby-world: '<red>lobby-world 가 꺼져 있습니다.'
   players-hidden: '<gray>다른 플레이어를 <red>숨겼습니다</red>.'
   players-shown: '<gray>다른 플레이어가 <green>보입니다</green>.'
   connecting: '<yellow><server></yellow> <gray>서버로 이동 중...'

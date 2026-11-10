@@ -3,6 +3,9 @@
 Paper **26.3** 로비 플러그인 — Java 유저와 **Bedrock(GeyserMC)** 유저 모두 지원.
 
 ## 기능
+- **허공 로비**: 빈 월드(`lobby`)를 만들고 공중에 떠 있는 원형 섬 로비를 자동 생성
+  - 석영 무늬 바닥 + 아래쪽 바위 + 게임 포탈 아치 4개 + 벚나무 4그루 + 가로등
+  - 가장자리 난간 + 투명 벽(배리어), 항상 낮·날씨 없음·몹 없음
 - 접속하면 로비 스폰으로 이동 + 게임모드/체력/인벤토리 초기화 + 환영 타이틀·메시지·사운드
 - 핫바 아이템: **게임 선택 나침반**, **플레이어 숨기기/보이기** 토글
 - 게임 선택 메뉴
@@ -16,15 +19,16 @@ Paper **26.3** 로비 플러그인 — Java 유저와 **Bedrock(GeyserMC)** 유�
 | 명령어 | 설명 | 권한 |
 |---|---|---|
 | `/lobby` (`/hub`, `/spawn`, `/로비`) | 로비로 이동 | 모두 |
+| `/lobbyrebuild` | 로비 구조물 다시 짓기 | `tangtamukei.admin` |
 | `/setlobby` | 현재 위치를 로비 스폰으로 설정 | `tangtamukei.admin` |
 | `/lobbyreload` | config.yml 다시 불러오기 | `tangtamukei.admin` |
 
 ## 빌드
-Java 25 필요 (Paper 26.x 요구사항).
+Maven + Java 25 필요 (Paper 26.x 요구사항).
 ```
-./gradlew build
+mvn package
 ```
-결과물: `build/libs/TangTaMukei-1.0.0.jar` → 서버 `plugins/` 폴더에 넣기.
+결과물: `target/TangTaMukei-1.0.0.jar` → 서버 `plugins/` 폴더에 넣기.
 
 ## 설정
 `plugins/TangTaMukei/config.yml` 에서 문구(MiniMessage), 아이템, 메뉴, 보호 옵션을 바꿀 수 있습니다.

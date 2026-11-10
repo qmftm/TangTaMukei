@@ -42,6 +42,19 @@ public final class LobbyCommands {
             }
         });
 
+        commands.register("lobbyrebuild", "로비 구조물 다시 짓기", new BasicCommand() {
+            @Override
+            public void execute(CommandSourceStack source, String[] args) {
+                if (lobby.lobbyWorld().rebuild()) lobby.message(source.getSender(), "rebuilt");
+                else lobby.message(source.getSender(), "no-lobby-world");
+            }
+
+            @Override
+            public String permission() {
+                return "tangtamukei.admin";
+            }
+        });
+
         commands.register("lobbyreload", "로비 설정 다시 불러오기", new BasicCommand() {
             @Override
             public void execute(CommandSourceStack source, String[] args) {
