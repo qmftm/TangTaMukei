@@ -497,7 +497,7 @@ public final class GameManager {
 
     /** config: 팀마다 처음 주는 청크 수 (꼭짓점부터 정사각형으로). */
     private int startChunks() {
-        return Math.clamp(plugin.getConfig().getInt("game.start-chunks", 4), 1, 64);
+        return Math.clamp(plugin.getConfig().getInt("game.start-chunks", 1), 1, 64);
     }
 
     public Location teamSpawn(GameTeam team) {
