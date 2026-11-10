@@ -92,6 +92,21 @@ public final class GameListener implements Listener {
         return new Location(target, x, y, z, from.getYaw(), from.getPitch());
     }
 
+    // ───────────── 발전과제 책 ─────────────
+
+    /** 책을 펼치기 직전에 최신 진척으로 고침. */
+    @EventHandler(priority = EventPriority.LOW)
+    public void onOpenBook(PlayerInteractEvent event) {
+        Action a = event.getAction();
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+        if (game.book().isBook(event.getItem())) game.book().fill(event.getItem(), event.getPlayer());
+    }
+
+    @EventHandler
+    public void onAdvancement(org.bukkit.event.player.PlayerAdvancementDoneEvent event) {
+        game.book().refresh(event.getPlayer());
+    }
+
     /** 침대가 부서졌거나 엔드에서 나올 때 게임 밖(메인 월드)으로 리스폰되지 않게. */
     @EventHandler(priority = EventPriority.HIGH)
     public void onRespawn(PlayerRespawnEvent event) {

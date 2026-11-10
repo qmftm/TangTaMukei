@@ -52,6 +52,21 @@ public final class GameManager {
     private static final int MARGIN_CHUNKS = 8;
     /** 엔드 월드보더: 메인 섬(반지름 약 140)만 들어오는 크기. 바깥 섬은 1000블록 밖이라 안 보임. */
     public static final int END_BORDER = 300;
+    public Territory territory() {
+        return territory;
+    }
+
+    public AdvancementBook book() {
+        return book;
+    }
+
+    /** /map: 게임 중일 때 땅따먹기 지도. */
+    public boolean giveMap(Player player) {
+        if (state != State.RUNNING || !gameMap.ready()) return false;
+        player.getInventory().addItem(gameMap.item());
+        return true;
+    }
+
     /** 엔드 도착 지점 (바닐라처럼 흑요석 발판 생성). */
     private static final int END_ARRIVAL_X = 100, END_ARRIVAL_Y = 49;
 
@@ -72,11 +87,15 @@ public final class GameManager {
     private Location strongholdTarget;
     /** 맵 준비 중에 /game start 가 들어오면 팀 수를 기억해 뒀다가 준비되자마자 시작. 0 = 대기 없음 */
     private int pendingTeams;
+    private final Territory territory = new Territory();
+    private final GameMap gameMap = new GameMap();
+    private final AdvancementBook book;
     private long prepareStarted;
 
     public GameManager(JavaPlugin plugin, LobbyManager lobby) {
         this.plugin = plugin;
         this.lobby = lobby;
+        this.book = new AdvancementBook(plugin);
         deleteLeftoverWorlds();
         LogFilter.install();
         // 서버가 켜지고 잠시 뒤 첫 맵 준비
@@ -224,6 +243,7 @@ public final class GameManager {
                 ? new Location(overworld, portal.getX(), portal.getY(), portal.getZ())
                 : new Location(overworld, 0.5, 30, 0.5);
         overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
+        gameMap.captureTerrain(overworld);
         plugin.getLogger().info("오버월드 복사 완료: 영역 " + pasted.regions().size() + "개, 몹 " + copied
                 + "마리, 엔드 포탈 " + (portal != null ? "y " + (int) portal.getY() : "못 찾음")
                 + " (" + (System.currentTimeMillis() - prepareStarted) / 1000 + "초)");
@@ -404,6 +424,8 @@ public final class GameManager {
         }
 
         teams.clear();
+        gameMap.start(overworld, territory, this::teamOf);
+        boolean resetAdvancements = plugin.getConfig().getBoolean("game.reset-advancements", true);
         for (int i = 0; i < players.size(); i++) {
             Player player = players.get(i);
             GameTeam t = used[i % used.length];
@@ -412,9 +434,11 @@ public final class GameManager {
 
             Location spawn = teamSpawn(t);
             player.setRespawnLocation(spawn, true);
+            if (resetAdvancements) AdvancementBook.reset(player);
             player.teleportAsync(spawn).thenRun(() -> preparePlayer(player, t));
         }
         state = State.RUNNING;
+        territory.start(plugin, overworld, used, this::teamOf);
         pendingTeams = 0;
         broadcast("<green><bold>게임 시작!</bold> <gray>" + used.length + "팀, " + players.size() + "명");
     }
@@ -430,6 +454,9 @@ public final class GameManager {
         player.setLevel(0);
         player.setExp(0f);
         player.clearActivePotionEffects();
+        // 모두에게 땅따먹기 지도, 베드락은 발전과제 화면이 없어서 진척 책도
+        player.getInventory().addItem(gameMap.item());
+        if (lobby.bedrock().isBedrock(player)) player.getInventory().addItem(book.create(player));
         player.showTitle(Title.title(
                 Component.text(team.displayName + " 팀", team.color),
                 Text.parse("<white>게임 시작!")));
@@ -474,6 +501,7 @@ public final class GameManager {
             return true;
         }
         state = State.IDLE;
+        territory.stop();
 
         Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
         for (GameTeam t : GameTeam.values()) {

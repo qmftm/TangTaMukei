@@ -110,6 +110,10 @@ menu:
       bedrock-image: 'textures/items/ender_pearl'
       action: 'command:lobby'
 
+game:
+  # 게임 시작 때 이전 판 발전과제 진척 초기화 (/book 책이 이번 판 기준이 되도록)
+  reset-advancements: true
+
 messages:
   prefix: '<gold>[로비]</gold> '
   teleported: '<green>로비로 이동했습니다.'

@@ -36,6 +36,15 @@ public final class TangTaMukei extends JavaPlugin {
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             LobbyCommands.register(event.registrar(), this, lobby);
             event.registrar().register("game", "팀 게임 시작/종료", java.util.List.of("게임"), new GameCommand(game));
+            event.registrar().register("map", "땅따먹기 지도 받기", java.util.List.of("지도"), (source, args) -> {
+                if (!(source.getExecutor() instanceof org.bukkit.entity.Player player)) return;
+                if (!game.giveMap(player)) player.sendMessage(com.tangtamukei.lobby.Text.parse("<red>게임 중일 때만 지도를 받을 수 있어요."));
+            });
+            event.registrar().register("book", "발전과제 진척 책 받기", java.util.List.of("책"), (source, args) -> {
+                if (source.getExecutor() instanceof org.bukkit.entity.Player player) {
+                    player.getInventory().addItem(game.book().create(player));
+                }
+            });
         });
 
         getLogger().info("로비 활성화 완료 (Floodgate " + (bedrock.isAvailable() ? "연동됨" : "없음 - 베드락은 상자 GUI 사용") + ")");
@@ -49,5 +58,9 @@ public final class TangTaMukei extends JavaPlugin {
 
     public LobbyManager lobby() {
         return lobby;
+    }
+
+    public GameManager game() {
+        return game;
     }
 }
