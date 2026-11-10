@@ -10,9 +10,12 @@ import org.bukkit.block.data.type.EndPortalFrame;
 import org.bukkit.block.data.type.Stairs;
 import org.bukkit.entity.EntityType;
 
+import org.bukkit.ChunkSnapshot;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * 요새의 엔드 포탈 방을 맵 정중앙으로 옮김.
@@ -42,6 +45,7 @@ final class PortalRoom {
     static Location relocate(World world, Random random) {
         removeOriginals(world);
         build(world, random);
+        connect(world, random);
         return new Location(world, 0.5, FLOOR_Y + 3, 0.5);
     }
 
@@ -125,6 +129,124 @@ final class PortalRoom {
         for (int sx : new int[]{-4, 4})
             for (int sz : new int[]{-6, 6})
                 set(world, sx, y0 + 1, sz, Material.LANTERN);
+    }
+
+    // ───────────── 요새 통로와 연결 ─────────────
+
+    private static final int SEARCH_RADIUS = 64;
+    static String lastTunnel = "없음";
+    private static final Set<Material> STRONGHOLD_FLOOR = Set.of(
+            Material.STONE_BRICKS, Material.MOSSY_STONE_BRICKS, Material.CRACKED_STONE_BRICKS,
+            Material.INFESTED_STONE_BRICKS, Material.INFESTED_MOSSY_STONE_BRICKS, Material.INFESTED_CRACKED_STONE_BRICKS,
+            Material.SMOOTH_STONE_SLAB, Material.STONE_BRICK_SLAB, Material.OAK_PLANKS);
+
+    /** 방 4면 입구 바로 바깥 칸과 바깥 방향. */
+    private static final int[][] DOORS = {
+            {0, -HALF_Z - 1, 0, -1}, {0, HALF_Z + 1, 0, 1}, {-HALF_X - 1, 0, -1, 0}, {HALF_X + 1, 0, 1, 0}};
+
+    /**
+     * 가장 가까운 요새 통로(석재 벽돌 바닥 위 2칸 빈 공간)를 찾아 방 입구에서 거기까지 통로를 뚫음.
+     * 높이 차이는 한 칸 전진마다 한 칸씩 계단으로 오르내림.
+     */
+    static boolean connect(World world, Random random) {
+        int minChunk = -SEARCH_RADIUS >> 4, maxChunk = (SEARCH_RADIUS >> 4) - 1;
+        int minY = Math.max(world.getMinHeight() + 2, -50), maxY = 60;
+        int doorY = FLOOR_Y + 1;
+
+        int[] best = null;
+        int[] bestDoor = null;
+        int bestCost = Integer.MAX_VALUE;
+        for (int cx = minChunk; cx <= maxChunk; cx++) {
+            for (int cz = minChunk; cz <= maxChunk; cz++) {
+                ChunkSnapshot snap = world.getChunkAt(cx, cz).getChunkSnapshot(false, false, false);
+                for (int lx = 0; lx < 16; lx++) {
+                    for (int lz = 0; lz < 16; lz++) {
+                        int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                        if (Math.abs(x) <= HALF_X + 2 && Math.abs(z) <= HALF_Z + 2) continue; // 방 안/벽
+                        for (int y = minY; y <= maxY; y++) {
+                            if (!snap.getBlockType(lx, y, lz).isAir() || !snap.getBlockType(lx, y + 1, lz).isAir()) continue;
+                            if (!STRONGHOLD_FLOOR.contains(snap.getBlockType(lx, y - 1, lz))) continue;
+                            for (int[] door : DOORS) {
+                                int horizontal = Math.abs(x - door[0]) + Math.abs(z - door[1]);
+                                int dy = Math.abs(y - doorY);
+                                if (horizontal < dy) continue; // 계단으로 갈 수 없을 만큼 가파름
+                                int cost = horizontal + dy;
+                                if (cost < bestCost) {
+                                    bestCost = cost;
+                                    best = new int[]{x, y, z};
+                                    bestDoor = door;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (best == null) return false;
+        dig(world, bestDoor, doorY, best, random);
+        lastTunnel = "(" + bestDoor[0] + "," + doorY + "," + bestDoor[1] + ") -> (" + best[0] + "," + best[1] + "," + best[2] + ")";
+        return true;
+    }
+
+    private static void dig(World world, int[] door, int doorY, int[] target, Random random) {
+        int x = door[0], y = doorY, z = door[1];
+        // 입구 벽 구멍과 이어지는 첫 칸
+        carve(world, x, y, z, random);
+        // 먼저 입구 바깥 방향으로 한 칸 더 나가서 방 벽에 붙지 않게
+        int ox = door[2], oz = door[3];
+        if (Math.abs(target[0] - x) + Math.abs(target[2] - z) > Math.abs(target[1] - y)) {
+            x += ox;
+            z += oz;
+            carve(world, x, y, z, random);
+        }
+
+        int guard = 0;
+        while ((x != target[0] || z != target[2] || y != target[1]) && guard++ < 512) {
+            int px = x, pz = z, py = y;
+            int stepX = 0, stepZ = 0;
+            if (x != target[0]) stepX = Integer.signum(target[0] - x);
+            else if (z != target[2]) stepZ = Integer.signum(target[2] - z);
+            x += stepX;
+            z += stepZ;
+            if (y != target[1]) y += Integer.signum(target[1] - y);
+            carve(world, x, y, z, random);
+
+            BlockFace dir = stepX > 0 ? BlockFace.EAST : stepX < 0 ? BlockFace.WEST : stepZ > 0 ? BlockFace.SOUTH : BlockFace.NORTH;
+            if (y > py) {
+                // 올라감: 새 칸의 바닥을 진행 방향으로 오르는 계단으로
+                stairs(world, x, y - 1, z, dir);
+                world.getBlockAt(px, py + 3, pz).setType(Material.AIR, false); // 머리 공간
+            } else if (y < py) {
+                // 내려감: 이전 칸 바닥을 반대 방향으로 오르는 계단으로
+                stairs(world, px, py - 1, pz, dir.getOppositeFace());
+                world.getBlockAt(x, y + 3, z).setType(Material.AIR, false);
+            }
+        }
+    }
+
+    /** 한 칸: 3칸 높이 비우고, 바닥은 벽돌, 옆/천장의 막힌 곳(물·용암 포함)은 벽돌로 둘러쌈. */
+    private static void carve(World world, int x, int y, int z, Random random) {
+        for (int dy = 0; dy < 3; dy++) world.getBlockAt(x, y + dy, z).setType(Material.AIR, false);
+        Block floor = world.getBlockAt(x, y - 1, z);
+        if (!floor.getType().name().endsWith("_STAIRS")) floor.setType(brick(random), false);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dy = -1; dy <= 3; dy++) {
+                    if (dx == 0 && dz == 0 && dy >= 0 && dy < 3) continue;
+                    Block b = world.getBlockAt(x + dx, y + dy, z + dz);
+                    Material t = b.getType();
+                    // 빈 공간(다른 통로·동굴)은 그대로 둬서 자연스럽게 이어지게
+                    if (t.isAir() || t.name().endsWith("_STAIRS") || STRONGHOLD_FLOOR.contains(t)) continue;
+                    if (t == Material.END_PORTAL_FRAME || t == Material.SPAWNER || t == Material.LANTERN) continue;
+                    b.setType(brick(random), false);
+                }
+            }
+        }
+    }
+
+    private static void stairs(World world, int x, int y, int z, BlockFace facing) {
+        world.getBlockAt(x, y, z).setBlockData(Material.STONE_BRICK_STAIRS.createBlockData(
+                d -> ((Stairs) d).setFacing(facing)), false);
     }
 
     private static void frame(World world, int x, int y, int z, BlockFace facing, Random random) {

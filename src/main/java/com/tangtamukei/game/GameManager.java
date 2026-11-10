@@ -265,6 +265,7 @@ public final class GameManager {
             clearOutside(overworld);
             clearOutside(nether);
             strongholdTarget = PortalRoom.relocate(overworld, new java.util.Random(overworld.getSeed()));
+            plugin.getLogger().info("엔드 포탈 방 ↔ 요새 연결 통로: " + PortalRoom.lastTunnel);
             releaseChunks();
             begin(players, count);
         }, 1L, 1L);
