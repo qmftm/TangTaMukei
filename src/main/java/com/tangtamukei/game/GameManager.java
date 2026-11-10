@@ -63,6 +63,10 @@ public final class GameManager {
     private World overworld;
     private World nether;
     private World end;
+    /** 지형을 복사해 오는 숨겨진 야생 월드 (맵 생성 중에만 존재). */
+    private World source;
+    private PastedOverworld pasted;
+    private int[][] chunkGroups;
     private Location strongholdTarget;
 
     public GameManager(JavaPlugin plugin, LobbyManager lobby) {
@@ -78,6 +82,13 @@ public final class GameManager {
 
     public boolean isGameWorld(World world) {
         return world != null && (world.equals(overworld) || world.equals(nether) || world.equals(end));
+    }
+
+    /** 두 위치가 서로 다른 곳에서 가져온 청크면 true (물·용암이 넘어가지 않게). */
+    public boolean differentSource(int x1, int z1, int x2, int z2) {
+        int[][] g = chunkGroups;
+        if (g == null || !MapLayout.inside(x1, z1) || !MapLayout.inside(x2, z2)) return false;
+        return g[(x1 - MapLayout.MIN) >> 4][(z1 - MapLayout.MIN) >> 4] != g[(x2 - MapLayout.MIN) >> 4][(z2 - MapLayout.MIN) >> 4];
     }
 
     public World end() {
@@ -119,19 +130,43 @@ public final class GameManager {
         String name = WORLD_PREFIX + System.currentTimeMillis();
         layout = new MapLayout(seed);
 
-        overworld = new WorldCreator(name)
+        // 1) 숨겨진 야생 월드(소스)에서 칸마다 지형을 찾아 불러옴
+        source = new WorldCreator(name + "_src")
                 .environment(World.Environment.NORMAL)
                 .seed(seed)
-                .generator(new OverworldGenerator(layout, seed))
-                .generateStructures(false)
+                .generateStructures(true)
+                .keepSpawnLoaded(net.kyori.adventure.util.TriState.FALSE)
                 .createWorld();
-        if (overworld == null) {
+        if (source == null) {
             fail();
             return true;
         }
-        setBorder(overworld, MapLayout.SIZE);
-        overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
+        PastedOverworld.prepare(plugin, source, layout, seed, msg -> actionBar("<yellow>" + msg)).thenAccept(paste -> {
+            if (state != State.GENERATING) return;
+            // 2) 게임 오버월드: 찾아둔 지형을 청크 단위로 그대로 복사
+            pasted = paste;
+            overworld = new WorldCreator(name)
+                    .environment(World.Environment.NORMAL)
+                    .seed(seed)
+                    .generator(new PasteGenerator(paste))
+                    .generateStructures(false)
+                    .createWorld();
+            if (overworld == null) {
+                fail();
+                return;
+            }
+            setBorder(overworld, MapLayout.SIZE);
+            overworld.setSpawnLocation(0, overworld.getHighestBlockYAt(0, 0) + 1, 0);
+            createNetherAndEnd(name, seed, players, count);
+        }).exceptionally(t -> {
+            plugin.getLogger().log(java.util.logging.Level.SEVERE, "오버월드 생성 실패", t);
+            Bukkit.getScheduler().runTask(plugin, this::fail);
+            return null;
+        });
+        return true;
+    }
 
+    private void createNetherAndEnd(String name, long seed, List<Player> players, int count) {
         findFortressSeed(1).thenAccept(netherSeed -> {
             if (state != State.GENERATING) return;
             nether = new WorldCreator(name + "_nether")
@@ -151,11 +186,10 @@ public final class GameManager {
             setBorder(nether, MapLayout.SIZE);
             setBorder(end, END_BORDER);
 
-            loadArea(overworld, "오버월드")
+            loadChunks(overworld, MapLayout.MIN_CHUNK, MapLayout.MAX_CHUNK, "오버월드")
                     .thenCompose(v -> loadArea(nether, "네더"))
                     .thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> placeStructures(players, count)));
         });
-        return true;
     }
 
     private void fail() {
@@ -246,8 +280,7 @@ public final class GameManager {
     private void placeStructures(List<Player> players, int count) {
         if (state != State.GENERATING) return;
         Deque<Runnable> jobs = new ArrayDeque<>();
-        for (MapLayout.Placement p : layout.placements()) jobs.add(() -> place(overworld, p, 64));
-        for (MapLayout.Placement p : netherLayout.placements()) jobs.add(() -> place(nether, p, 64));
+        for (NetherLayout.Placement p : netherLayout.placements()) jobs.add(() -> place(nether, p, 64));
         int total = jobs.size();
 
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
@@ -262,16 +295,33 @@ public final class GameManager {
                 return;
             }
             task.cancel();
-            clearOutside(overworld);
             clearOutside(nether);
-            strongholdTarget = PortalRoom.relocate(overworld, new java.util.Random(overworld.getSeed()));
-            plugin.getLogger().info("엔드 포탈 방 ↔ 요새 연결 통로: " + PortalRoom.lastTunnel);
+            // 소스 월드의 상자·스포너 내용과 주민·몹을 복사한 뒤 소스 월드는 버림
+            int copied = pasted.copyStatesAndEntities(overworld);
+            chunkGroups = pasted.groups();
+            Location portal = pasted.portal();
+            strongholdTarget = portal != null
+                    ? new Location(overworld, portal.getX(), portal.getY(), portal.getZ())
+                    : new Location(overworld, 0.5, 30, 0.5);
+            plugin.getLogger().info("오버월드 복사 완료: 영역 " + pasted.regions().size() + "개, 몹 " + copied
+                    + "마리, 엔드 포탈 " + (portal != null ? "y " + (int) portal.getY() : "못 찾음"));
+            pasted.release();
+            discardSource();
             releaseChunks();
             begin(players, count);
         }, 1L, 1L);
     }
 
-    private void place(World world, MapLayout.Placement p, int y) {
+    private void discardSource() {
+        if (source == null) return;
+        File folder = source.getWorldFolder();
+        Bukkit.unloadWorld(source, false);
+        source = null;
+        pasted = null;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> deleteFolder(folder));
+    }
+
+    private void place(World world, NetherLayout.Placement p, int y) {
         String cmd = "execute in " + world.getKey().asString() + " run place structure "
                 + p.structure().getKey().asString() + " " + p.x() + " " + y + " " + p.z();
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
@@ -408,6 +458,7 @@ public final class GameManager {
 
     private void cleanupWorlds() {
         List<File> folders = new ArrayList<>();
+        discardSource();
         for (World w : new World[]{overworld, nether, end}) {
             if (w == null) continue;
             for (Player p : w.getPlayers()) p.teleport(lobby.spawn());
@@ -452,7 +503,7 @@ public final class GameManager {
     }
 
     private void cleanupWorldsSync() {
-        for (World w : new World[]{overworld, nether, end}) {
+        for (World w : new World[]{overworld, nether, end, source}) {
             if (w == null) continue;
             File folder = w.getWorldFolder();
             Bukkit.unloadWorld(w, false);

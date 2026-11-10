@@ -55,11 +55,14 @@ public final class NetherLayout {
         return grid[col][row];
     }
 
-    /** 요새는 항상 맵 중앙 (0, 0) 청크에서 생성 → GameManager 가 맵 안에 들어오는 시드를 고름. */
-    public static final MapLayout.Placement FORTRESS = new MapLayout.Placement(org.bukkit.generator.structure.Structure.FORTRESS, 0, 0);
+    public record Placement(org.bukkit.generator.structure.Structure structure, int x, int z) {
+    }
 
-    public List<MapLayout.Placement> placements() {
-        List<MapLayout.Placement> list = new ArrayList<>();
+    /** 요새는 항상 맵 중앙 (0, 0) 청크에서 생성 → GameManager 가 맵 안에 들어오는 시드를 고름. */
+    public static final Placement FORTRESS = new Placement(org.bukkit.generator.structure.Structure.FORTRESS, 0, 0);
+
+    public List<Placement> placements() {
+        List<Placement> list = new ArrayList<>();
         boolean[][] done = new boolean[GRID][GRID];
         for (int col = 0; col < GRID; col++) {
             for (int row = 0; row < GRID; row++) {
@@ -79,7 +82,7 @@ public final class NetherLayout {
                     // 보루는 넓어서 맵 안쪽으로 당김
                     if (type == NetherCell.BASTION) z += z < 0 ? CELL / 2 : -CELL / 2;
                 }
-                list.add(new MapLayout.Placement(type.structure, x, z));
+                list.add(new Placement(type.structure, x, z));
             }
         }
         return list;

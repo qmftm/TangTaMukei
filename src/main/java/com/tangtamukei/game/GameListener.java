@@ -215,11 +215,18 @@ public final class GameListener implements Listener {
         }
     }
 
-    /** 맵 가장자리에서 물/용암이 공허로 흘러나가지 않게. */
+    /** 맵 가장자리에서 물/용암이 공허로 흘러나가지 않게, 붙여넣은 청크 경계를 넘지 않게. */
     @EventHandler(ignoreCancelled = true)
     public void onFlow(BlockFromToEvent event) {
         if (!game.isGameWorld(event.getBlock().getWorld())) return;
         var to = event.getToBlock();
-        if (!MapLayout.inside(to.getX(), to.getZ())) event.setCancelled(true);
+        var from = event.getBlock();
+        if (!MapLayout.inside(to.getX(), to.getZ())) {
+            event.setCancelled(true);
+        } else if (from.getWorld().equals(game.overworld())
+                && game.differentSource(from.getX(), from.getZ(), to.getX(), to.getZ())) {
+            // 다른 곳에서 가져온 청크 경계: 물벽이 그대로 남도록 흐름 차단
+            event.setCancelled(true);
+        }
     }
 }
