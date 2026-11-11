@@ -95,6 +95,7 @@ public final class GameManager {
     private Location strongholdTarget;
     /** 맵 준비 중에 /game start 가 들어오면 팀 수를 기억해 뒀다가 준비되자마자 시작. 0 = 대기 없음 */
     private int pendingTeams;
+    private Map<UUID, GameTeam> pendingAssign = Map.of();
     private final Territory territory = new Territory();
     private final GameMap gameMap = new GameMap();
     private final AdvancementBook book;
@@ -162,8 +163,16 @@ public final class GameManager {
      * @return 이미 게임 중이면 false
      */
     public boolean start(int teamCount) {
+        return start(teamCount, Map.of());
+    }
+
+    /**
+     * 팀을 정해서 시작 (로비 팀 설정 GUI). assign 에 없는 사람은 인원이 적은 팀부터 자동 배정.
+     */
+    public boolean start(int teamCount, Map<UUID, GameTeam> assign) {
         if (state == State.RUNNING) return false;
         int count = Math.clamp(teamCount <= 0 ? Math.max(Bukkit.getOnlinePlayers().size(), 1) : teamCount, 1, 4);
+        pendingAssign = new HashMap<>(assign);
         if (state == State.READY) {
             begin(new ArrayList<>(Bukkit.getOnlinePlayers()), count);
             return true;
@@ -424,6 +433,8 @@ public final class GameManager {
         players.removeIf(p -> !p.isOnline());
         Collections.shuffle(players);
         GameTeam[] used = GameTeam.forCount(count);
+        Map<UUID, GameTeam> chosen = assignTeams(players, used, pendingAssign);
+        pendingAssign = Map.of();
 
         Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
         for (GameTeam t : used) {
@@ -438,9 +449,8 @@ public final class GameManager {
         teams.clear();
         gameMap.start(overworld, territory, this::teamOf);
         boolean resetAdvancements = plugin.getConfig().getBoolean("game.reset-advancements", true);
-        for (int i = 0; i < players.size(); i++) {
-            Player player = players.get(i);
-            GameTeam t = used[i % used.length];
+        for (Player player : players) {
+            GameTeam t = chosen.get(player.getUniqueId());
             teams.put(player.getUniqueId(), t);
             board.getTeam(teamId(t)).addEntity(player);
 
@@ -455,6 +465,28 @@ public final class GameManager {
         landTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> landToken.tick(world, territory, this::teamOf), 1L, 1L);
         pendingTeams = 0;
         broadcast("<green><bold>게임 시작!</bold> <gray>" + used.length + "팀, " + players.size() + "명");
+    }
+
+    /** 정해둔 팀은 그대로 (이번 팀 수에 있는 팀일 때만), 나머지는 인원이 적은 팀부터. */
+    private static Map<UUID, GameTeam> assignTeams(List<Player> players, GameTeam[] used, Map<UUID, GameTeam> preset) {
+        List<GameTeam> usable = List.of(used);
+        Map<UUID, GameTeam> result = new HashMap<>();
+        Map<GameTeam, Integer> size = new java.util.EnumMap<>(GameTeam.class);
+        for (GameTeam t : used) size.put(t, 0);
+        for (Player p : players) {
+            GameTeam t = preset.get(p.getUniqueId());
+            if (t != null && usable.contains(t)) {
+                result.put(p.getUniqueId(), t);
+                size.merge(t, 1, Integer::sum);
+            }
+        }
+        for (Player p : players) {
+            if (result.containsKey(p.getUniqueId())) continue;
+            GameTeam smallest = usable.stream().min(Comparator.comparingInt(size::get)).orElseThrow();
+            result.put(p.getUniqueId(), smallest);
+            size.merge(smallest, 1, Integer::sum);
+        }
+        return result;
     }
 
     private void preparePlayer(Player player, GameTeam team) {
@@ -517,6 +549,7 @@ public final class GameManager {
         if (state != State.RUNNING) {
             if (pendingTeams == 0) return false;
             pendingTeams = 0;
+            pendingAssign = Map.of();
             broadcast("<yellow>게임 시작을 취소했어요.");
             return true;
         }

@@ -15,6 +15,7 @@ public final class TangTaMukei extends JavaPlugin {
 
     private LobbyManager lobby;
     private GameManager game;
+    private com.tangtamukei.game.LobbyPortals portals;
 
     @Override
     public void onEnable() {
@@ -33,6 +34,9 @@ public final class TangTaMukei extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new LobbyListener(lobby), this);
         getServer().getPluginManager().registerEvents(new GameListener(game, this), this);
+        portals = new com.tangtamukei.game.LobbyPortals(this, lobby, game);
+        getServer().getPluginManager().registerEvents(portals, this);
+        getServer().getScheduler().runTask(this, portals::spawnLabels);
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             LobbyCommands.register(event.registrar(), this, lobby);
             event.registrar().register("game", "팀 게임 시작/종료", java.util.List.of("게임"), new GameCommand(game));
@@ -52,6 +56,7 @@ public final class TangTaMukei extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (portals != null) portals.removeLabels();
         if (game != null) game.shutdown();
         getServer().getMessenger().unregisterOutgoingPluginChannel(this);
     }
