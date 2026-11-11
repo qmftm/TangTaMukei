@@ -25,7 +25,7 @@ import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 
 /**
- * 로비 포탈 4개: 북쪽(정면) = 땅따먹기, 나머지 = 개발중.
+ * 로비 포탈 4개: 북쪽(정면) = 땅따먹기, 동쪽(빨강) = 용암비, 남쪽(하늘색) = 대홍수 (둘 다 개발중), 서쪽 = 개발중.
  * 포탈 위에 큰 글씨를 띄우고, OP 가 땅따먹기 포탈을 우클릭하면 팀 설정 GUI → 시작.
  */
 public final class LobbyPortals implements Listener {
@@ -34,6 +34,9 @@ public final class LobbyPortals implements Listener {
     private static final int DISTANCE = 13; // 로비 구조물 반지름 16 - 3
     /** 북, 동, 남, 서 포탈 가운데 (x, z). 0번이 땅따먹기. */
     private static final int[][] PORTALS = {{0, -DISTANCE}, {DISTANCE, 0}, {0, DISTANCE}, {-DISTANCE, 0}};
+    /** 개발중인 게임 이름 (포탈 번호 → 이름, 색). 없으면 그냥 "개발중". */
+    private static final String[] UPCOMING = {null, "용암비", "대홍수", null};
+    private static final NamedTextColor[] UPCOMING_COLOR = {null, NamedTextColor.RED, NamedTextColor.AQUA, null};
 
     private final Plugin plugin;
     private final LobbyManager lobby;
@@ -63,6 +66,10 @@ public final class LobbyPortals implements Listener {
                 int minutes = plugin.getConfig().getInt("game.expected-minutes", 60);
                 label(top, Component.text("최소 " + min + "명\n예상시간: " + minutes + "분", NamedTextColor.WHITE), 1.6f);
                 label(top.clone().add(0, 0.95, 0), Component.text("땅따먹기", NamedTextColor.GOLD, TextDecoration.BOLD), 6.0f);
+            } else if (UPCOMING[i] != null) {
+                // 다음에 만들 게임: 제목 + 아래 작게 "개발중"
+                label(top, Component.text("개발중", NamedTextColor.GRAY), 1.8f);
+                label(top.clone().add(0, 0.6, 0), Component.text(UPCOMING[i], UPCOMING_COLOR[i], TextDecoration.BOLD), 6.0f);
             } else {
                 label(top, Component.text("개발중", NamedTextColor.GRAY, TextDecoration.BOLD), 4.0f);
             }
@@ -109,7 +116,8 @@ public final class LobbyPortals implements Listener {
         event.setCancelled(true);
         Player player = event.getPlayer();
         if (portal != 0) {
-            player.sendMessage(Component.text("개발중인 게임이에요.", NamedTextColor.GRAY));
+            String name = UPCOMING[portal];
+            player.sendMessage(Component.text(name != null ? name + "는 개발중이에요." : "개발중인 게임이에요.", NamedTextColor.GRAY));
             return;
         }
         if (!player.isOp()) {
