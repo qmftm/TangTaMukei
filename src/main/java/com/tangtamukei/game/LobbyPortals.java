@@ -35,6 +35,16 @@ public final class LobbyPortals implements Listener {
     /** 북, 동, 남, 서 포탈 가운데 (x, z). 0번이 땅따먹기. */
     private static final int[][] PORTALS = {{0, -DISTANCE}, {DISTANCE, 0}, {0, DISTANCE}, {-DISTANCE, 0}};
 
+    private static final Component DESCRIPTION = Component.text()
+            .append(Component.text("팀끼리 땅을 넓히는 서바이벌\n", NamedTextColor.WHITE, TextDecoration.BOLD))
+            .append(Component.text("발전과제 → ", NamedTextColor.GRAY)).append(Component.text("[일반 땅]", NamedTextColor.GREEN))
+            .append(Component.text(" 도끼로 땅 먹기\n", NamedTextColor.GRAY))
+            .append(Component.text("도전 과제 → ", NamedTextColor.GRAY)).append(Component.text("[특수 땅]", NamedTextColor.LIGHT_PURPLE))
+            .append(Component.text("으로 남의 땅 뺏기\n", NamedTextColor.GRAY))
+            .append(Component.text("내 땅으로 둘러싸면 안쪽도 내 땅!\n", NamedTextColor.GRAY))
+            .append(Component.text("관리자가 우클릭하면 시작", NamedTextColor.YELLOW))
+            .build();
+
     private final Plugin plugin;
     private final LobbyManager lobby;
     private final GameManager game;
@@ -56,11 +66,13 @@ public final class LobbyPortals implements Listener {
         world.getEntitiesByClass(TextDisplay.class).stream().filter(e -> e.getScoreboardTags().contains(TAG)).forEach(org.bukkit.entity.Entity::remove);
         int h = height();
         for (int i = 0; i < PORTALS.length; i++) {
-            Location top = new Location(world, PORTALS[i][0] + 0.5, h + 7.0, PORTALS[i][1] + 0.5);
+            Location top = new Location(world, PORTALS[i][0] + 0.5, h + 5.7, PORTALS[i][1] + 0.5); // 아치 바로 위
             if (i == 0) {
                 // 포탈(폭 5블록)보다 넓게 보이도록 크게
                 label(top, Component.text("땅따먹기", NamedTextColor.GOLD, TextDecoration.BOLD), 6.0f);
-                label(top.clone().add(0, -1.0, 0), Component.text("관리자가 우클릭하면 팀 설정 후 시작", NamedTextColor.WHITE), 1.8f);
+                // 게임 설명: 포탈 앞쪽(로비 가운데 방향), 포탈 높이쯤 눈높이에
+                Location front = new Location(world, PORTALS[i][0] + 0.5, h + 1.9, PORTALS[i][1] + 0.5 + 1.6);
+                label(front, DESCRIPTION, 1.1f);
             } else {
                 label(top, Component.text("개발중", NamedTextColor.GRAY, TextDecoration.BOLD), 4.0f);
             }
@@ -72,6 +84,7 @@ public final class LobbyPortals implements Listener {
             d.text(text);
             d.setBillboard(Display.Billboard.CENTER);
             d.setShadowed(true);
+            d.setLineWidth(400);
             d.setBackgroundColor(Color.fromARGB(110, 0, 0, 0));
             d.setTransformation(new Transformation(new Vector3f(), new AxisAngle4f(),
                     new Vector3f(scale, scale, scale), new AxisAngle4f()));
