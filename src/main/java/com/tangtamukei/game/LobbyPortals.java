@@ -25,18 +25,23 @@ import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 
 /**
- * 로비 포탈 4개: 북쪽(정면) = 땅따먹기, 동쪽(빨강) = 용암비, 남쪽(하늘색) = 대홍수 (둘 다 개발중), 서쪽 = 개발중.
+ * 로비 포탈 4개: 북쪽(정면) = 땅따먹기, 동쪽(빨강) = 하늘에서 용암이 내린다면, 남쪽(하늘색) = 대홍수 (둘 다 개발중), 서쪽 = 개발중.
+ * 글씨는 보는 사람을 따라 돌지 않고 광장 쪽을 향해 고정.
  * 포탈 위에 큰 글씨를 띄우고, OP 가 땅따먹기 포탈을 우클릭하면 팀 설정 GUI → 시작.
  */
 public final class LobbyPortals implements Listener {
 
     private static final String TAG = "tt_portal_label";
-    private static final int DISTANCE = 13; // 로비 구조물 반지름 16 - 3
+    private static final int DISTANCE = com.tangtamukei.lobby.LobbyStructure.PORTAL_DISTANCE;
     /** 북, 동, 남, 서 포탈 가운데 (x, z). 0번이 땅따먹기. */
     private static final int[][] PORTALS = {{0, -DISTANCE}, {DISTANCE, 0}, {0, DISTANCE}, {-DISTANCE, 0}};
     /** 개발중인 게임 이름 (포탈 번호 → 이름, 색). 없으면 그냥 "개발중". */
-    private static final String[] UPCOMING = {null, "용암비", "대홍수", null};
+    private static final String[] UPCOMING = {null, "하늘에서 용암이\n내린다면", "대홍수", null};
     private static final NamedTextColor[] UPCOMING_COLOR = {null, NamedTextColor.RED, NamedTextColor.AQUA, null};
+    /** 제목 크기 (긴 이름은 두 줄 + 작게 해서 포탈 폭에 맞춤). */
+    private static final float[] UPCOMING_SCALE = {0, 3.4f, 6.0f, 0};
+    /** 포탈별 글씨 방향: 광장(가운데)을 바라보게. 북 → 남쪽을 봄(0), 동 → 서쪽(90), 남 → 북쪽(180), 서 → 동쪽(-90) */
+    private static final float[] FACING = {0f, 90f, 180f, -90f};
 
     private final Plugin plugin;
     private final LobbyManager lobby;
@@ -59,7 +64,7 @@ public final class LobbyPortals implements Listener {
         world.getEntitiesByClass(TextDisplay.class).stream().filter(e -> e.getScoreboardTags().contains(TAG)).forEach(org.bukkit.entity.Entity::remove);
         int h = height();
         for (int i = 0; i < PORTALS.length; i++) {
-            Location top = new Location(world, PORTALS[i][0] + 0.5, h + 5.7, PORTALS[i][1] + 0.5); // 아치 바로 위
+            Location top = new Location(world, PORTALS[i][0] + 0.5, h + 5.7, PORTALS[i][1] + 0.5, FACING[i], 0f); // 아치 바로 위
             if (i == 0) {
                 // 아치 바로 위: 최소 인원 / 예상시간, 그 위에 큰 제목 (포탈 폭 5블록보다 넓게)
                 int min = plugin.getConfig().getInt("game.min-players", 2);
@@ -69,7 +74,7 @@ public final class LobbyPortals implements Listener {
             } else if (UPCOMING[i] != null) {
                 // 다음에 만들 게임: 제목 + 아래 작게 "개발중"
                 label(top, Component.text("개발중", NamedTextColor.GRAY), 1.8f);
-                label(top.clone().add(0, 0.6, 0), Component.text(UPCOMING[i], UPCOMING_COLOR[i], TextDecoration.BOLD), 6.0f);
+                label(top.clone().add(0, 0.6, 0), Component.text(UPCOMING[i], UPCOMING_COLOR[i], TextDecoration.BOLD), UPCOMING_SCALE[i]);
             } else {
                 label(top, Component.text("개발중", NamedTextColor.GRAY, TextDecoration.BOLD), 4.0f);
             }
@@ -79,7 +84,7 @@ public final class LobbyPortals implements Listener {
     private void label(Location loc, Component text, float scale) {
         loc.getWorld().spawn(loc, TextDisplay.class, d -> {
             d.text(text);
-            d.setBillboard(Display.Billboard.CENTER);
+            d.setBillboard(Display.Billboard.FIXED); // 시선을 따라 돌지 않음 (위치의 방향으로 고정)
             d.setShadowed(true);
             d.setBackgroundColor(Color.fromARGB(110, 0, 0, 0));
             d.setTransformation(new Transformation(new Vector3f(), new AxisAngle4f(),
@@ -116,8 +121,8 @@ public final class LobbyPortals implements Listener {
         event.setCancelled(true);
         Player player = event.getPlayer();
         if (portal != 0) {
-            String name = UPCOMING[portal];
-            player.sendMessage(Component.text(name != null ? name + "는 개발중이에요." : "개발중인 게임이에요.", NamedTextColor.GRAY));
+            String name = UPCOMING[portal] == null ? null : UPCOMING[portal].replace('\n', ' ');
+            player.sendMessage(Component.text(name != null ? "'" + name + "'는 개발중이에요." : "개발중인 게임이에요.", NamedTextColor.GRAY));
             return;
         }
         if (!player.isOp()) {

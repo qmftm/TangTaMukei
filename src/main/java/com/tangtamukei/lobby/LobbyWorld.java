@@ -14,7 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** 허공 로비 월드 생성/로드 + 구조물 자동 생성. */
 public final class LobbyWorld {
 
-    private static final int STRUCTURE_VERSION = 1;
+    private static final int STRUCTURE_VERSION = 2; // 2: 광장 + 게임별 섬 4개
 
     private final JavaPlugin plugin;
     private final NamespacedKey builtKey;
