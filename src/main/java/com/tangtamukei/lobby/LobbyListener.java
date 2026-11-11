@@ -150,7 +150,9 @@ public final class LobbyListener implements Listener {
     public void onMove(PlayerMoveEvent event) {
         if (!event.hasChangedBlock()) return;
         Player player = event.getPlayer();
-        if (event.getTo().getY() < lobby.config().getDouble("protection.void-y", 0) && lobby.isInLobby(player)) {
+        // 로비에는 난간이 없어서, 떨어지면 바로 광장 가운데 스폰으로
+        if (event.getTo().getY() < lobby.voidY() && lobby.isInLobby(player)) {
+            player.setFallDistance(0);
             player.teleportAsync(lobby.spawn());
         }
     }

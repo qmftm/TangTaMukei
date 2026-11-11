@@ -49,6 +49,7 @@ protection:
   item-pickup: true
   inventory-move: true
   # 이 높이보다 떨어지면 스폰으로 되돌림
+  # (허공 로비를 그대로 쓰면 이 값 대신 "로비 높이 - 10" 이 자동 적용됨. /setlobby 로 다른 곳을 쓸 때만 이 값 사용)
   void-y: 60
 
 # 핫바 아이템. action:

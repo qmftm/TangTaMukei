@@ -88,6 +88,12 @@ public final class LobbyManager {
         plugin.saveConfig();
     }
 
+    /** 이 높이 아래로 떨어지면 스폰으로. 허공 로비는 바닥에서 10칸 아래, 아니면 설정값. */
+    public double voidY() {
+        if (lobbyWorld.world() != null && config().getString("spawn.world", "").isEmpty()) return lobbyWorld.height() - 10;
+        return config().getDouble("protection.void-y", 0);
+    }
+
     public boolean isInLobby(Player player) {
         return player.getWorld().equals(spawn().getWorld());
     }

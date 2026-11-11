@@ -14,7 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** 허공 로비 월드 생성/로드 + 구조물 자동 생성. */
 public final class LobbyWorld {
 
-    private static final int STRUCTURE_VERSION = 2; // 2: 광장 + 게임별 섬 4개
+    private static final int STRUCTURE_VERSION = 3; // 2: 광장 + 게임별 섬 4개, 3: 디테일 추가 + 난간 제거
 
     private final JavaPlugin plugin;
     private final NamespacedKey builtKey;
@@ -79,6 +79,10 @@ public final class LobbyWorld {
 
     public World world() {
         return world;
+    }
+
+    public int height() {
+        return height;
     }
 
     /** 구조물 중앙 (북쪽 포탈을 바라봄). */
