@@ -161,6 +161,7 @@ public final class GameListener implements Listener {
             return;
         }
         event.getItemDrop().remove();
+        int enclosed = game.territory().fillEnclosed(team);
         World world = player.getWorld();
         world.playSound(player.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.6f, 1.6f);
         int cx = Math.floorDiv(target[0], 16) * 16 + 8, cz = Math.floorDiv(target[1], 16) * 16 + 8;
@@ -168,7 +169,8 @@ public final class GameListener implements Listener {
         for (Player p : org.bukkit.Bukkit.getOnlinePlayers()) {
             GameTeam t = game.teamOf(p);
             if (t == team) p.sendMessage(net.kyori.adventure.text.Component.text(
-                    player.getName() + " 님이 " + previous.displayName + " 팀 땅을 빼앗았어요! (" + game.territory().count(team) + "칸)", team.color));
+                    player.getName() + " 님이 " + previous.displayName + " 팀 땅을 빼앗았어요!"
+                    + (enclosed > 0 ? " 둘러싼 땅 " + enclosed + "칸도 함께!" : "") + " (" + game.territory().count(team) + "칸)", team.color));
             else if (t == previous) p.sendMessage(net.kyori.adventure.text.Component.text(
                     team.displayName + " 팀이 [특수 땅]으로 우리 땅을 빼앗았어요! (" + cx + ", " + cz + ")", net.kyori.adventure.text.format.NamedTextColor.RED));
         }
@@ -190,12 +192,14 @@ public final class GameListener implements Listener {
         }
         event.getItemDrop().remove(); // 도끼 사용
         game.landToken().clear(player);
+        int enclosed = game.territory().fillEnclosed(team);
         int cx = Math.floorDiv(target[0], 16) * 16 + 8, cz = Math.floorDiv(target[1], 16) * 16 + 8;
         World world = player.getWorld();
         world.playSound(player.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 1f, 1.4f);
         world.spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER, cx, world.getHighestBlockYAt(cx, cz) + 1.5, cz, 60, 6, 1, 6);
         net.kyori.adventure.text.Component msg = net.kyori.adventure.text.Component.text(
-                player.getName() + " 님이 땅을 먹었어요! (" + game.territory().count(team) + "칸)", team.color);
+                player.getName() + " 님이 땅을 먹었어요!" + (enclosed > 0 ? " 둘러싼 땅 " + enclosed + "칸도 함께!" : "")
+                        + " (" + game.territory().count(team) + "칸)", team.color);
         for (Player p : org.bukkit.Bukkit.getOnlinePlayers()) if (game.teamOf(p) == team) p.sendMessage(msg);
     }
 

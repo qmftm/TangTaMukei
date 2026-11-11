@@ -4,20 +4,27 @@ package com.tangtamukei.game;
  * 청크 땅 주인.
  * - 각 팀의 시작 꼭짓점 2x2 청크만 처음부터 그 팀 땅, 나머지는 주인 없음
  * - 주인 없는 땅은 [일반 땅] 도끼로만, 다른 팀 땅은 [특수 땅] 도끼로만 가져올 수 있음 ({@link LandToken})
+ * - 맵 벽과 우리 팀 땅으로 에워싼 영역은 안의 땅 전부 우리 팀 땅 ({@link #fillEnclosed})
  */
 public final class Territory {
 
     private static final int N = MapLayout.CHUNKS;
 
     private final GameTeam[][] owner = new GameTeam[N][N];
+    /** 팀 시작 땅 (에워싸기 판정에서 "바깥"의 기준). */
+    private final GameTeam[][] start = new GameTeam[N][N];
     /** 땅 주인이 바뀔 때마다 증가 (지도 다시 그리기용). */
     private volatile int version;
 
     /** 게임 시작: 모든 땅 초기화 후 팀마다 꼭짓점부터 startChunks 개 지급. */
     public void start(GameTeam[] teams, int startChunks) {
         for (GameTeam[] row : owner) java.util.Arrays.fill(row, null);
+        for (GameTeam[] row : start) java.util.Arrays.fill(row, null);
         for (GameTeam t : teams) {
-            for (int[] cr : startChunks(t, startChunks)) owner[cr[0]][cr[1]] = t;
+            for (int[] cr : startChunks(t, startChunks)) {
+                owner[cr[0]][cr[1]] = t;
+                start[cr[0]][cr[1]] = t;
+            }
         }
         version++;
     }
@@ -82,6 +89,46 @@ public final class Territory {
         owner[(x - MapLayout.MIN) >> 4][(z - MapLayout.MIN) >> 4] = team;
         version++;
         return previous;
+    }
+
+    /**
+     * 에워싸기: team 땅이 아닌 청크들을 상하좌우로 이어진 영역으로 나누고,
+     * 다른 팀의 시작 땅이 없는 영역(= 맵 벽과 team 땅으로만 둘러싸인 안쪽)은 전부 team 땅으로.
+     * 주인 없는 땅과 다른 팀 땅 모두 포함. 얻은 청크 수를 반환.
+     */
+    public int fillEnclosed(GameTeam team) {
+        boolean[][] seen = new boolean[N][N];
+        int gained = 0;
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int c = 0; c < N; c++) {
+            for (int r = 0; r < N; r++) {
+                if (seen[c][r] || owner[c][r] == team) continue;
+                // 영역 하나 모으기
+                java.util.List<int[]> region = new java.util.ArrayList<>();
+                java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+                queue.add(new int[]{c, r});
+                seen[c][r] = true;
+                boolean outside = false;
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.poll();
+                    region.add(cell);
+                    GameTeam s = start[cell[0]][cell[1]];
+                    if (s != null && s != team) outside = true;
+                    for (int[] d : dirs) {
+                        int nc = cell[0] + d[0], nr = cell[1] + d[1];
+                        if (nc < 0 || nr < 0 || nc >= N || nr >= N) continue; // 맵 벽
+                        if (seen[nc][nr] || owner[nc][nr] == team) continue;   // 우리 땅 = 벽
+                        seen[nc][nr] = true;
+                        queue.add(new int[]{nc, nr});
+                    }
+                }
+                if (outside) continue;
+                for (int[] cell : region) owner[cell[0]][cell[1]] = team;
+                gained += region.size();
+            }
+        }
+        if (gained > 0) version++;
+        return gained;
     }
 
     public int count(GameTeam team) {
