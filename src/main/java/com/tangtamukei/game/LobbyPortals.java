@@ -58,8 +58,11 @@ public final class LobbyPortals implements Listener {
         for (int i = 0; i < PORTALS.length; i++) {
             Location top = new Location(world, PORTALS[i][0] + 0.5, h + 5.7, PORTALS[i][1] + 0.5); // 아치 바로 위
             if (i == 0) {
-                // 포탈(폭 5블록)보다 넓게 보이도록 크게
-                label(top, Component.text("땅따먹기", NamedTextColor.GOLD, TextDecoration.BOLD), 6.0f);
+                // 아치 바로 위: 최소 인원 / 예상시간, 그 위에 큰 제목 (포탈 폭 5블록보다 넓게)
+                int min = plugin.getConfig().getInt("game.min-players", 2);
+                int minutes = plugin.getConfig().getInt("game.expected-minutes", 60);
+                label(top, Component.text("최소 " + min + "명\n예상시간: " + minutes + "분", NamedTextColor.WHITE), 1.6f);
+                label(top.clone().add(0, 0.95, 0), Component.text("땅따먹기", NamedTextColor.GOLD, TextDecoration.BOLD), 6.0f);
             } else {
                 label(top, Component.text("개발중", NamedTextColor.GRAY, TextDecoration.BOLD), 4.0f);
             }

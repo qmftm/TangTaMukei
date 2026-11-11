@@ -111,6 +111,9 @@ menu:
       action: 'command:lobby'
 
 game:
+  # 로비 땅따먹기 포탈에 표시 (표시만, 시작을 막지는 않음)
+  min-players: 2
+  expected-minutes: 60
   # 게임 시작 때 팀마다 주는 땅(청크) 수. 꼭짓점부터 정사각형으로 채움
   # 1 = 꼭짓점 1칸, 4 = 2x2, 9 = 3x3 (그 사이 값은 다음 줄을 한 칸씩). 최대 64
   start-chunks: 1
